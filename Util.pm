@@ -16,16 +16,16 @@ our @ISA = qw(Exporter DynaLoader);
 
 our %EXPORT_TAGS = (
 'io'	=> [ qw(appendfile atime readfile writefile reader mtime ctime) ],
-'www'	=> [ qw(html jscript text xml xmlparse) ],
+'www'	=> [ qw(html js text xml xmlparse) ],
 'string'=> [ qw(csv plural trim ltrim rtrim capitalize commify) ], 
-'misc'	=> [ qw(any id respond clone arrayref coderef scalarref hashref swap) ],
+'misc'	=> [ qw(any id find respond clone arrayref coderef scalarref hashref swap) ],
 'math'	=> [ qw(div isnum isuv isbig isfloat isint isneg isinf isnan inf infinity) ],
 'test'	=> [ qw(backref_magic_is_defined) ]
 );
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 bootstrap Util $VERSION;
 
@@ -57,7 +57,7 @@ The following tags have been defined:
 
 :www
 
-    html, jscript, text, xml, xmlparse
+    html, js, text, xml, xmlparse
 
 :string
     
@@ -684,16 +684,22 @@ sub hashref ($) {
 
     html ($text);
 
+	# or
+
+    html ();
+
 =head3 description
 
-Returns $text with the HTML Content-type header prefixed.
+Returns $text with the 'text/html' Content-type header prefixed;
+or just the header if no $text is provided.
 
 Prints the prefixed page out directly if called in void context.
 
 =cut
 
-sub html ($) {
-    respond ("Content-type: text/html\n\n" . shift);
+sub html (;$) {
+    my $arg = scalar @_ ? shift : '';
+    respond ("Content-type: text/html\n\n" . $arg);
 }
 
 =head2 id
@@ -822,23 +828,28 @@ sub isnan ($) {
     return (isnum(shift()) & 32) ? 1 : 0;
 }
 
-=head2 jscript
+=head2 js
 
 =head3 usage
 
-    jscript ($text);
+    js ($text);
+
+	# or
+
+    js ();
 
 =head3 description
 
 Returns the JavaScript in $text with the 'application/x-javascript'
-Content-type header prefixed.
+Content-type header prefixed; or just the header if no $text is provided.
 
 Prints the prefixed page out directly if called in void context
 
 =cut
 
-sub jscript ($) {
-    respond ("Content-type: application/x-javascript\n\n" . shift);
+sub js (;$) {
+    my $arg = scalar @_ ? shift : '';
+    respond ("Content-type: application/x-javascript\n\n" . $arg);
 }
 
 =head2 ltrim
@@ -1248,18 +1259,24 @@ sub swap (\$\$) {
 
 =head3 usage
 
-text ($text);
+    text ($text);
+
+	# or
+
+    text ();
 
 =head3 description
 
-Returns $text with the text/plain Content-type header prefixed.
+Returns $text with the 'text/plain' Content-type header prefixed;
+or just the header if no $text is provided.
 
 Prints the prefixed page out directly if called in void context.
 
 =cut
 
-sub text ($) { 
-	respond ("Content-type: text/plain\n\n" . shift);
+sub text (;$) { 
+    my $arg = scalar @_ ? shift : '';
+    respond ("Content-type: text/plain\n\n" . $arg);
 }
 
 =head2 trim
@@ -1339,18 +1356,24 @@ sub writefile ($$;%) {
 
 =head3 usage
 
-xml ($text);
+    xml ($text);
+
+	# or
+
+    xml ();
 
 =head3 description
 
-Returns $text with the text/xml Content-type header prefixed.
+Returns (optional) $text with the 'text/xml' Content-type header prefixed;
+or just the header if no $text is provided.
 
 Prints the prefixed page out directly if called in void context.
 
 =cut
 
-sub xml ($) { 
-    respond ("Content-type: xml/plain\n\n" . shift);
+sub xml (;$) { 
+    my $arg = scalar @_ ? shift : '';
+    respond ("Content-type: text/xml\n\n" . $arg);
 }
 
 =cut

@@ -1,5 +1,12 @@
 Revision history for Perl extension Util.
 
+0.04  Fri Jul 04 12:37:36 2003
+
+    added missing find() export
+    renamed jscript() - now called js()
+    added no-arg support (and docs) to mime-type subs:
+	html(), js(), text() and xml()
+
 0.03  Wed Jun 18 16:36:43 2003
 
     removed: 

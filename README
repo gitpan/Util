@@ -1,4 +1,4 @@
-Util version 0.03
+Util version 0.04
 ==================
 
 Util - Frequently Hacked Functions
@@ -8,8 +8,8 @@ lazy, impatient and hubristic.
 
 It features XS versions of such FAQ-fare as clone() and isnum() (including
 isint(), isfloat() &c), as well as pure perl implementations of such timewasters
-as min(), max(), swap(), readfile(), writefile() and appendfile(). Throughout,
-the emphasis is on high performance, best practices and fun.
+as swap(), readfile(), writefile() and appendfile(). Throughout,
+the emphasis is on high performance, best practice and fun.
 
 See the POD for more info.
 
