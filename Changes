@@ -1,5 +1,21 @@
 Revision history for Perl extension Util.
 
+0.03  Wed Jun 18 16:36:43 2003
+
+    removed: 
+	dquote:	    only used as a helper sub for csv()
+	jshtml:	    markup in code == evil
+	quote:	    unused
+       	redirect:   markup in code == evil
+	squote:	    only used as a helper sub for csv()
+       	urlize:	    unused
+       	min:	    List::Util::min, List::Util::minstr
+       	max:	    List::Util::max, List::Util::maxstr
+
+    added:
+	text:	    text/plain header
+	xml:	    text/xml header
+
 0.02  Wed May 28 19:18:20 2003
 
     various AWOL snippets of code and doumentation hunted down and added:

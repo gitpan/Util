@@ -16,22 +16,18 @@ our @ISA = qw(Exporter DynaLoader);
 
 our %EXPORT_TAGS = (
 'io'	=> [ qw(appendfile atime readfile writefile reader mtime ctime) ],
-'www'	=> [ qw(html jscript jshtml xmlparse urlize redirect) ],
-'string'=> [ qw(dquote squote csv plural trim ltrim rtrim quote capitalize commify) ], 
+'www'	=> [ qw(html jscript text xml xmlparse) ],
+'string'=> [ qw(csv plural trim ltrim rtrim capitalize commify) ], 
 'misc'	=> [ qw(any id respond clone arrayref coderef scalarref hashref swap) ],
-'math'	=> [ qw(div isnum isuv isbig isfloat isint isneg isinf isnan inf infinity min max) ],
+'math'	=> [ qw(div isnum isuv isbig isfloat isint isneg isinf isnan inf infinity) ],
 'test'	=> [ qw(backref_magic_is_defined) ]
 );
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 bootstrap Util $VERSION;
-
-# TODO:
-
-# implement quote() as an XSUB?
 
 1;
 
@@ -61,11 +57,11 @@ The following tags have been defined:
 
 :www
 
-    html, jscript, jshtml, redirect, urlize, xmlparse
+    html, jscript, text, xml, xmlparse
 
 :string
     
-    capitalize, commify, csv, dquote, ltrim, plural, quote, rtrim, squote, trim
+    capitalize, commify, csv, ltrim, plural, rtrim, trim
 
 :misc
 
@@ -73,13 +69,13 @@ The following tags have been defined:
 
 :math
 
-    div, inf, infinity, isbig, isfloat, isinf, isnan, isneg, isnum, isuv, max, min
+    div, inf, infinity, isbig, isfloat, isinf, isnan, isneg, isnum, isuv
 
 =head1 PUBLIC METHODS
 
 =head2 any
 
-=head3 usage:
+=head3 usage
 
     # return 0 or 1
     my $flip = any();
@@ -107,7 +103,7 @@ The following tags have been defined:
     # inclusive
     my $int = any($integer_min, $integer_max);
 
-=head3 description:
+=head3 description
 
 Returns a randomly chosen member of the referenced ARRAY, or a
 random key from the referenced HASH.
@@ -189,11 +185,11 @@ sub any(;$$$) {
 
 =head2 appendfile
 
-=head3 usage:
+=head3 usage
 
     appendfile($file, $data, %args);
 
-=head3 description:
+=head3 description
 
 This is a simple wrapper for writefile()'s APPEND option.
 
@@ -219,7 +215,7 @@ sub appendfile ($$;%) {
 
 =head2 apply
 
-=head3 usage:
+=head3 usage
 
     my $result = apply $coderef, @optional_args;
 
@@ -231,7 +227,7 @@ sub appendfile ($$;%) {
 
     my $result = apply \&Name::Space::sub, @optional_args;
 
-=head3 description:
+=head3 description
 
 Invokes the subroutine supplied as the first argument,
 passing any arguments in @optional_args as parameters.
@@ -248,11 +244,11 @@ sub apply ($;@) {
 
 =head2 arrayref
 
-=head3 usage:
+=head3 usage
 
     do_something() if (arrayref $arg);
 
-=head3 description:
+=head3 description
 
 Returns a true value if $arg is a blessed or unblessed
 ARRAY reference.
@@ -269,11 +265,11 @@ sub arrayref ($) {
 
 =head2 atime
 
-=head3 usage:
+=head3 usage
 
     my $atime = atime($file);
 
-=head3 description:
+=head3 description
 
 Returns the time (in seconds since the epoch) the specified
 file was last accessed.
@@ -286,7 +282,7 @@ sub atime($) {
 
 =head2 capitalize
 
-=head3 usage:
+=head3 usage
 
     capitalize($str)
 
@@ -294,7 +290,7 @@ sub atime($) {
 
     capitalize($str, @do_not_capitalize_these_words)
 
-=head3 description:
+=head3 description
 
 Initial-capitalizes $str i.e. any words (defined as consecutive
 characters between word-boundaries (\b)) in $str that aren't already
@@ -356,7 +352,7 @@ sub capitalize ($;@) {
 
 =head2 clone
 
-=head3 usage:
+=head3 usage
 
     use Util qw(clone);
 
@@ -386,7 +382,7 @@ sub capitalize ($;@) {
 
     my $clone = clone($node2, [ $node2->{parent} ]);
 
-=head3 description:
+=head3 description
 
 clone() returns a recursive copy of its argument, which can be an
 arbitrary (scalar) type including nested HASH, ARRAY and reference types
@@ -412,11 +408,11 @@ For a slower, but more flexible solution see Storable's dclone().
 
 =head2 coderef
 
-=head3 usage:
+=head3 usage
 
     do_something() if (coderef $arg);
 
-=head3 description:
+=head3 description
 
 Returns a true value if $arg is a blessed or unblessed
 CODE reference.
@@ -433,11 +429,11 @@ sub coderef ($) {
 
 =head2 commify
 
-=head3 usage:
+=head3 usage
 
     my $pretty = commify($int);
 
-=head3 description:
+=head3 description
 
 Returns a reader-friendly representation of the supplied integer
 punctuated with commas at the customary thousands/millions
@@ -471,7 +467,7 @@ sub commify($) {
 
 =head2 csv
 
-=head3 usage:
+=head3 usage
 
     my $csv = csv($fields, $arrayref);
 
@@ -500,7 +496,7 @@ sub commify($) {
     "foo","bar","baz","foobar"
     "one","two","three","four"
 
-=head3 description:
+=head3 description
 
     $fields:	an ARRAY ref representing a list of field names
     $arrayref:	a reference to an ARRAY of HASH or ARRAY references
@@ -527,7 +523,7 @@ sub csv ($$) {
 
     local $_;
 
-    my @out = join (',', map { dquote $_ } @$fields);
+    my @out = join (',', map { _dquote $_ } @$fields);
 
     for my $ref (@$arrayref) {
 	my @row = ();
@@ -541,7 +537,7 @@ sub csv ($$) {
 	    die ('csv: invalid arg 2: expected arg 2 element ARRAY of ARRAY or HASH refs, got: "$ref"');
 	}
 
-	push @out, join (',', map { dquote $_ } @row);
+	push @out, join (',', map { _dquote $_ } @row);
     }
 
     return wantarray ? @out : join ($/, @out);
@@ -549,11 +545,11 @@ sub csv ($$) {
 
 =head2 ctime
 
-=head3 usage:
+=head3 usage
 
     my $ctime = ctime($file);
 
-=head3 description:
+=head3 description
 
 Returns the time (in seconds since the epoch) the specified
 file was created.
@@ -566,7 +562,7 @@ sub ctime($) {
 
 =head2 div
 
-=head3 usage:
+=head3 usage
 
     my ($quotient, $remainder) = div ($numerator, $denominator);
 
@@ -577,7 +573,7 @@ sub ctime($) {
     # $q = 4, $r = 1:
     # 13 ($numerator) = 4 ($quotient) x 3 ($denominator) + 1 ($remainder) 
 
-=head3 description:
+=head3 description
 
 Integer division operator: in list context, returns the quotient and remainder when the first
 operand ($numerator) is divided by the second ($denominator).
@@ -598,21 +594,23 @@ sub div ($$) {
     return wantarray ? ($quotient, $remainder) : $quotient;
 }
 
-=head2 dquote
+# =head2 dquote
+# 
+# =head3 usage
+# 
+#     my $double_quoted = dquote($string);
+# 
+# =head3 description
+# 
+# Returns (a copy of) its argument surrounded by double quotes.
+# 
+# Any internal double quotes encountered inside $str are escaped with a backslash.
+# 
+# =cut
 
-=head3 usage:
+# PRIVATE METHOD
 
-    my $double_quoted = dquote($string);
-
-=head3 description:
-
-Returns (a copy of) its argument surrounded by double quotes.
-
-Any internal double quotes encountered inside $str are escaped with a backslash.
-
-=cut
-
-sub dquote ($) {
+sub _dquote ($) {
     my $text = shift;
     $text =~ s/"/\\"/g;
     return sprintf '"%s"', $text;
@@ -620,7 +618,7 @@ sub dquote ($) {
 
 =head2 find
 
-=head3 usage:
+=head3 usage
 
     my $index = find ($arrayref, $scalar)
 
@@ -628,7 +626,7 @@ sub dquote ($) {
 
     my $index = find ($arrayref, $scalar, $from)
 
-=head3 description:
+=head3 description
 
 Returns the offset of $scalar within $arrayref, with the first
 position denoted by 0.
@@ -662,11 +660,11 @@ sub find ($$;$) {
 
 =head2 hashref
 
-=head3 usage:
+=head3 usage
 
     do_something() if (hashref $arg);
 
-=head3 description:
+=head3 description
 
 Returns a true value if $arg is a blessed or unblessed HASH reference.
 
@@ -682,11 +680,11 @@ sub hashref ($) {
 
 =head2 html
 
-=head3 usage:
+=head3 usage
 
     html ($text);
 
-=head3 description:
+=head3 description
 
 Returns $text with the HTML Content-type header prefixed.
 
@@ -700,11 +698,11 @@ sub html ($) {
 
 =head2 id
 
-=head3 usage:
+=head3 usage
 
     id()
 
-=head3 description:
+=head3 description
 
 Returns a quick 'n' dirty Unique Identifier. Uses $$ (amongst
 other things), so not necessarily reliable under SpeedyCGI,
@@ -719,7 +717,7 @@ sub id () {
 
 =head2 infinity inf
 
-=head3 usage:
+=head3 usage
 
     my $inf = infinity()
 
@@ -727,7 +725,7 @@ sub id () {
 
     my $inf = inf()
 
-=head3 description:
+=head3 description
 
 Perl 5.8 claims to support infinity natively, but falls short on
 many platforms. This utility function is a trivial wrapper for the
@@ -753,11 +751,11 @@ sub inf();
 
 =head2 isnum
 
-=head3 usage:
+=head3 usage
 
     isnum ($val)
 
-=head3 description:
+=head3 description
 
 Returns a nonzero value (indicating the numeric type) if $val is a number.
 
@@ -781,10 +779,10 @@ flavours of isnum (corresponding to the flags above) are also available:
     isinf
     isnan
 
-    isint returns -1 if its operand is a negative integer, 1 if
-    it's a positive integer and 0 otherwise.
+isint returns -1 if its operand is a negative integer, 1 if
+it's a positive integer and 0 otherwise.
 
-    The others always return 1 or 0.
+The others always return 1 or 0.
 
 =cut
 
@@ -826,11 +824,11 @@ sub isnan ($) {
 
 =head2 jscript
 
-=head3 usage:
+=head3 usage
 
     jscript ($text);
 
-=head3 description:
+=head3 description
 
 Returns the JavaScript in $text with the 'application/x-javascript'
 Content-type header prefixed.
@@ -843,36 +841,13 @@ sub jscript ($) {
     respond ("Content-type: application/x-javascript\n\n" . shift);
 }
 
-=head2 jshtml
-
-=head3 usage:
-
-    jshtml ($text);
-
-=head3 description:
-
-Returns the JavaScript in $text wrapped inside <script>, <head>
-and <html> tags.
-
-The resulting HTML is returned with a 'text/html' header
-
-Prints the result out directly if called in void context
-
-=cut
-
-sub jshtml ($) {
-    my $fmt = '<html><head><script><!--$/\t%s$///-->';
-    $fmt   .= '</script></head><body></body></html>';
-    respond (html(sprintf($fmt, shift())));
-}
-
 =head2 ltrim
 
-=head3 usage:
+=head3 usage
 
     ltrim ($str)
 
-=head3 description:
+=head3 description
 
 Returns a copy of $str with whitespace removed from the beginning.
 
@@ -884,63 +859,13 @@ sub ltrim ($) {
     return $spacey;
 }
 
-=head2 max
-
-=head3 usage:
-
-    my $max = max($x, $y);
-
-=head3 description:
-
-Returns $x if $x > $y - otherwise returns $y.
-$x and y are compared using 
-
-    >  if both are numbers,
-    gt otherwise
-
-=cut
-
-sub max($$) {
-    my ($x, $y) = @_;
-    if (isnum $x and isnum $y) {
-	return $x > $y ? $x : $y;
-    } else {
-	return $x gt $y ? $x : $y;
-    }
-}
-
-=head2 min
-
-=head3 usage:
-
-    my $min = min($x, $y);
-
-=head3 description:
-
-Returns $x if $x < $y - otherwise returns $y.
-$x and y are compared using 
-
-    <  if both are numbers,
-    lt otherwise
-
-=cut
-
-sub min($$) {
-    my ($x, $y) = @_;
-    if (isnum $x and isnum $y) {
-	return $x < $y ? $x : $y;
-    } else {
-	return $x lt $y ? $x : $y;
-    }
-}
-
 =head2 mtime
 
-=head3 usage:
+=head3 usage
 
     my $mtime = mtime($file);
 
-=head3 description:
+=head3 description
 
 Returns the time (in seconds since the epoch) the specified file
 was last modified.
@@ -953,7 +878,7 @@ sub mtime($) {
 
 =head2 plural
 
-=head3 usage:
+=head3 usage
 
     my $plural = plural($stem, $count);
 
@@ -961,7 +886,7 @@ sub mtime($) {
 
     my $plural = plural($stem, $count, $plural);
 
-=head3 description:
+=head3 description
 
 Plural() takes a singular word or word-stem as an argument; it
 evaluates $count to see if it is equal to 1; if it is, $stem is
@@ -991,37 +916,9 @@ sub plural ($$;$) {
     return ($count == 1) ? $string : $string . $plural;
 }
 
-=head2 quote
-
-=head3 usage:
-
-    quote($str)
-
-=head3 description:
-
-Escapes all single quote ('), double-quote (") and vertical space
-(\n\r\f) characters with a backslash, visually flattening the
-resulting text.
-
-Useful for string export e.g. assigning a HTML page to a
-JavaScript var.
-
-Prints the escaped text out directly if called in void context.
-
-=cut
-
-sub quote ($) { # Escape quotes and newlines
-    my $escapee = shift;
-    $escapee = '' unless (defined $escapee);
-    $escapee =~ s/'/\\'/g;
-    $escapee =~ s/"/\\"/g;
-    $escapee =~ s/[\n\r\f]/\\n/g;
-    respond ($escapee);
-}
-
 =head2 reader
 
-=head3 usage:
+=head3 usage
 
     my $source = '';
     my $read = reader($path, IRS => '...', CHOMP => 1);
@@ -1036,7 +933,7 @@ sub quote ($) { # Escape quotes and newlines
 	do_something_with($_);
     }
 
-=head3 description:
+=head3 description
 	
 This method implements a generator/continuation interface to the
 fine art of file slurpage. It provides a private (lexically scoped)
@@ -1147,11 +1044,11 @@ sub reader ($;%) {
 
 =head2 readfile
 
-=head3 description:
+=head3 description
 
     Swiss-Army Slurp
 
-=head3 usage:
+=head3 usage
 
     # vanilla
     readfile($path); # print the file
@@ -1230,47 +1127,14 @@ sub readfile($;%) { # this prototype doesn't do what it says on the tin
     respond @lines;
 }
 
-=head2 redirect
-
-=head3 usage:
-
-    my $redirect = redirect($uri);
-
-	# or
-
-    redirect($uri);
-
-=head3 description:
-
-Returns a suitable HTTP header (and fallback HTML) to perform a browser
-redirection to the supplied URI.
-
-Prints the response directly if called in void context.
-
-=cut
-
-sub redirect ($) {
-    my $uri = shift;
-    my $out = "Status: 302 Redirected\n";
-    $out .= "Content-type: text/html\n";
-    $out .= "Location: $uri\n\n";
-    $out .= "<html><head>\n";
-    $out .= "<title>Client Redirected</title>\n";
-    $out .= "</head><body>\n";
-    $out .= "The CGI script has redirected your browser to " .
-	    "<a href=\"$uri\">this location</a>.\n";
-    $out .= "</body></html>\n";
-    respond $out;
-}
-
 =head2 respond
 
-=head3 usage:
+=head3 usage
 
     respond ($scalar)
     respond (@list)
 
-=head3 description:
+=head3 description
 
 respond() performs a context-sensitive return:
 
@@ -1300,11 +1164,11 @@ sub respond (@) { # Context-sensitive return: one or more args
 
 =head2 rtrim
 
-=head3 usage:
+=head3 usage
 
     rtrim ($str)
 
-=head3 description:
+=head3 description
 
 Returns a copy of $str with whitespace removed from the end.
 
@@ -1316,21 +1180,23 @@ sub rtrim ($) {
     return $spacey;
 }
 
-=head2 squote
+# =head2 squote
+# 
+# =head3 usage
+# 
+#     my $single_quoted = squote($string);
+# 
+# =head3 description
+# 
+# Returns (a copy of) its argument surrounded by single quotes.
+# 
+# Any internal single quotes encountered inside $str are escaped with a backslash.
+# 
+# =cut
+# 
+# PRIVATE METHOD
 
-=head3 usage:
-
-    my $single_quoted = squote($string);
-
-=head3 description:
-
-Returns (a copy of) its argument surrounded by single quotes.
-
-Any internal single quotes encountered inside $str are escaped with a backslash.
-
-=cut
-
-sub squote ($) {
+sub _squote ($) {
     my $text = shift;
     $text =~ s/'/\\'/g;
     return sprintf "'%s'", $text;
@@ -1338,11 +1204,11 @@ sub squote ($) {
 
 =head2 scalarref
 
-=head3 usage:
+=head3 usage
 
     do_something() if (scalarref $arg);
 
-=head3 description:
+=head3 description
 
 Returns a true value if $arg is a blessed or unblessed SCALAR reference.
 
@@ -1358,11 +1224,11 @@ sub scalarref ($) {
 
 =head2 swap
 
-=head3 usage:
+=head3 usage
 
     swap($x, $y);
 
-=head3 description:
+=head3 description
 
 Sets the value of $x to $y and vice-versa.
 
@@ -1378,13 +1244,31 @@ sub swap (\$\$) {
     ($$lhs, $$rhs) = ($$rhs, $$lhs);
 }
 
+=head2 text
+
+=head3 usage
+
+text ($text);
+
+=head3 description
+
+Returns $text with the text/plain Content-type header prefixed.
+
+Prints the prefixed page out directly if called in void context.
+
+=cut
+
+sub text ($) { 
+	respond ("Content-type: text/plain\n\n" . shift);
+}
+
 =head2 trim
 
-=head3 usage:
+=head3 usage
 
     trim ($str)
 
-=head3 description:
+=head3 description
 
 Returns a copy of $str with whitespace removed from the beginning and end,
 and multiple internal spaces squashed into single spaces.
@@ -1399,44 +1283,13 @@ sub trim ($) {  # Aaaaaaaaaaaaaagh!!!
     return $spacey;
 }
 
-=head2 urlize
-
-=head3 usage:
-
-    my $url = urlize('Foo: BAR baz'); # returns 'foo_bar_baz'
-
-    # or
-
-    my $url = urlize('Foo - BAR - baz', 'html'); # returns 'foo_bar_baz.html'
-
-=head3 description:
-
-Makes its text argument URL-friendly
-
-Returns the first argument lowercased with any consecutive non-alphanumeric
-characters replaced by an underscore.
-
-If the optional second argument is provided, this is appended as an
-extension prefixed by '.'
-
-=cut
-
-sub urlize($;$) {
-    my $name = shift;
-    croak ("urlize: name not defined") unless (defined $name);
-    my $ext = scalar (@_) ? ".$_[0]" : '';
-    # replace consecutive non-alphanumeric characters with an underscore
-    $name =~ s/[^A-Za-z0-9]+/_/g;
-    return lc($name) . $ext;
-}
-
 =head2 writefile
 
-=head3 usage:
+=head3 usage
 
     writefile($file, $data, %args);
 
-=head3 description:
+=head3 description
 
 Write $data to filename $file. In theory, additional herbs and spices are
 specified as a list of pairs, in the same manner as readfile (and reader).
@@ -1482,15 +1335,33 @@ sub writefile ($$;%) {
     return $status;
 }
 
+=head2 xml
+
+=head3 usage
+
+xml ($text);
+
+=head3 description
+
+Returns $text with the text/xml Content-type header prefixed.
+
+Prints the prefixed page out directly if called in void context.
+
+=cut
+
+sub xml ($) { 
+    respond ("Content-type: xml/plain\n\n" . shift);
+}
+
 =cut
 
 =head2 xmlparse
 
-=head3 usage:
+=head3 usage
 
     xmlparse ($parser, $xml_path_or_data);
 
-=head3 description:
+=head3 description
 
 Convenience wrapper for XML::Parser (or XML::Parser::Expat - or
 indeed any parser that supports parse() and parsefile())
@@ -1570,11 +1441,11 @@ package Scope::Guard;
 #
 #    new
 #
-# usage:
+# usage
 #
 #    my $sg = Scope::Guard->new();
 #
-# description:
+# description
 #
 #    Creates a new ScopeGuard object. ScopeGuard provides resource
 #    management for a non-lexically-scoped variable
@@ -1612,11 +1483,11 @@ sub new {
 
 # guard
 #
-# usage:
+# usage
 #
 #    $sg->guard($resource, $handler);
 #
-# description:
+# description
 #
 #    Initialize a ScopeGuard object with the resource it should
 #    manage and the handler that should be called to implement
@@ -1630,11 +1501,11 @@ sub guard {
 
 # DESTROY
 #
-# usage:
+# usage
 #
 #    $sg->DESTROY();
 #
-# description:
+# description
 #
 #    Not called directly. The destructor is a thin wrapper around
 #    the invocation of the handler on the resource

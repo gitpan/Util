@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use Config;
-use Test::More tests => 38;
+use Test::More tests => 30;
 
 BEGIN {
     chdir 't' if (-d 't');
@@ -46,15 +46,3 @@ SKIP: {
     is (isnan('NaN'), 1, "isnan('NaN') == 1");		# 29
     is (isnan(42), 0, "isnan(42) == 0");		# 30
 }
-
-my ($x, $y) = (1, 2);
-
-is (min (1, 2), 1, 'min (1, 2) == 1');
-is (min (1, 1.5), 1, 'min (1, 1.5) == 1');
-is (min (1, 'one'), 1, 'min (1, 1.5) == 1');
-is (min ('one', 'two'), 'one', 'min ("one", "two") eq "one"');
-
-is (max (1, 2), 2, 'max (1, 2) == 2');
-is (max (1, 1.5), 1.5, 'max (1, 1.5) == 1.5');
-is (max (1, 'one'), 'one', 'max (1, "one") == 1');
-is (max ('one', 'two'), 'two', 'max ("one", "two") eq "two"');

@@ -1,4 +1,4 @@
-Util version 0.02
+Util version 0.03
 ==================
 
 Util - Frequently Hacked Functions
@@ -9,7 +9,7 @@ lazy, impatient and hubristic.
 It features XS versions of such FAQ-fare as clone() and isnum() (including
 isint(), isfloat() &c), as well as pure perl implementations of such timewasters
 as min(), max(), swap(), readfile(), writefile() and appendfile(). Throughout,
-the emphasis is on high performance, best practice and fun.
+the emphasis is on high performance, best practices and fun.
 
 See the POD for more info.
 
@@ -32,6 +32,9 @@ This module has the following dependencies:
 
   In addition, due to limited support for weak references in older
   versions, clone() only copies these correctly with Perl(s) >= 5.8.0
+
+  The numerical functions (isnum() and its offspring) along with some of
+  the tests thereof have proved unreliable on pre-5.8.0 perls as well.
 
 COPYRIGHT AND LICENCE
 
