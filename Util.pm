@@ -25,7 +25,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 bootstrap Util $VERSION;
 
@@ -71,7 +71,7 @@ The following tags have been defined:
 
     div, inf, infinity, isbig, isfloat, isinf, isnan, isneg, isnum, isuv
 
-=head1 PUBLIC METHODS
+=head1 FUNCTIONS
 
 =head2 any
 
@@ -335,7 +335,6 @@ sub capitalize ($;@) {
     my $text = shift;
 
     if (@_) {
-	local $_;
 	my %exclude = map { $_ => 1 } @_;
 	$text =~ s/([\w']+)/(($1 ne lc ($1)) || $exclude{$1}) ?
 	    $1 : "\u\L$1"/ge;
@@ -517,8 +516,6 @@ sub csv ($$) {
     die ("csv: invalid arg 2: expected ref to an ARRAY of ARRAY or HASH refs: " .
 	 "got $ref_arg2") unless (arrayref $arrayref);
 
-    local $_;
-
     my @out = join (',', map { _dquote $_ } @$fields);
 
     for my $ref (@$arrayref) {
@@ -641,7 +638,6 @@ If the third argument is supplied, the search begins at that index
 
 sub find ($$;$) {
     my ($haystack, $needle, $from) = @_;
-    local $_;
 
     $from = 0 unless (defined $from);
 
@@ -1058,31 +1054,36 @@ sub reader ($;%) {
 =head3 usage
 
     # vanilla
-    readfile($path); # print the file
+    readfile $path; # print the file
 	# or
-    my $file = readfile($path);
+    my $file = readfile $path;
 	
     # handle warnings/fatal errors
-    my $file = readfile($path, WARN => \&my_warn, DIE => sub { die @_ });
+    my $file = readfile $path, WARN => \&my_warn, DIE => sub { die @_ };
 	
     # lines
-    my @file = readfile($path);
+    my @file = readfile $path;
 	
     # set Input Record Separator
-    my @file = readfile($path, IRS => '...');
+    my @file = readfile $path, IRS => '...';
 	
     # strip Input Record Separator from result
-    my @file = readfile($path, IRS => '...', CHOMP => 1);
+    my @file = readfile $path, IRS => '...', CHOMP => 1;
+
+    # open a binary file (e.g. on Windows/Cygwin)
+    my $file = readfile $path, BINARY => 1;
 	
     # all together now...
-    my $file = readfile(
+    my $file = readfile (
 	$path,
-	WARN  => $warn,
-	DIE   => $die,
-	IRS   => '...',
-	CHOMP => 1);
+	WARN	=> $warn,
+	DIE	=> $die,
+	IRS	=> '...',
+	BINARY  => 1,
+	CHOMP	=> 1);
 
-    # synonyms for IRS => DELIM, SPLIT, DELIMITER
+    # synonyms for IRS	    => DELIM, SPLIT, DELIMITER
+    # synonym  for BINARY   => BINMODE
 
 =cut
 	
@@ -1092,7 +1093,6 @@ sub _readfile_warn { warn ('readfile: ' . shift) }
 
 sub readfile($;%) { # this prototype doesn't do what it says on the tin
     my ($file, %args) = @_;
-    local $_;
     my ($die, $warn, $chomp) = @args{qw(DIE WARN CHOMP)};
     # tread carefully in case the delimiter is '' or 0
     my $delim;
@@ -1112,7 +1112,8 @@ sub readfile($;%) { # this prototype doesn't do what it says on the tin
 
     local (*FILE);
     if (open(FILE, $file)) {
-	local $/;
+	binmode FILE if ($args{BINARY} || $args{BINMODE});
+	local ($/, $_);
 
 	if (flock(FILE, LOCK_SH)) { # LOCK_SH
 	    $/ = $delim if (defined $delim);
@@ -1328,7 +1329,7 @@ sub trim ($) {
 
 =head3 description:
     
-makes its text argument URL-friendly
+Makes its text argument URL-friendly.
     
 Returns the first argument lowercased with any consecutive non-alphanumeric
 characters replaced by an underscore.
@@ -1343,7 +1344,7 @@ sub urlize($;$) {
     croak ("urlize: name not defined") unless (defined $name);
     my $ext = scalar (@_) ? ".$_[0]" : '';
     # replace consecutive non-alphanumeric characters with an underscore
-    $name =~ s/[^A-Za-z0-9]+/_/g;
+    $name =~ s/\W+/_/g;
     return lc($name) . $ext;
 }
 
@@ -1355,12 +1356,14 @@ sub urlize($;$) {
 
 =head3 description
 
-Write $data to filename $file. In theory, additional herbs and spices are
+Write $data to filename $file. Additional herbs and spices are
 specified as a list of pairs, in the same manner as readfile (and reader).
 
-In practice, only APPEND => 1 for append (as opposed to truncate)
-and/or 'MODE' => $mode (to roll your own file access mode) are
-currently defined.
+Currently, the following options are supported:
+
+APPEND		=> 1 for append (as opposed to truncate)
+MODE		=> $mode (to roll your own file access mode)
+BINARY/BINMODE	=> 1 to write a binary file (e.g. on Windows/Cygwin)
 
 =cut
 
@@ -1381,6 +1384,7 @@ sub writefile ($$;%) {
     local (*FILE);
 
     if (open(FILE, "$mode$file")) {
+	binmode FILE if ($args{BINARY} || $args{BINMODE});
 	if (flock(FILE, LOCK_EX)) {
 	    $status = print FILE $data;
 	    flock(FILE, LOCK_UN); # release exclusive lock
@@ -1422,8 +1426,6 @@ sub xml (;$) {
     my $arg = scalar @_ ? shift : '';
     respond ("Content-type: text/xml\n\n" . $arg);
 }
-
-=cut
 
 =head2 xmlparse
 

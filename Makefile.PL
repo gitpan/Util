@@ -7,6 +7,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=>	'Util',
     'VERSION_FROM'	=>	'Util.pm', 	# finds $VERSION
+    'INSTALLDIRS'       =>	'perl',
     'PREREQ_PM'		=>	{ # e.g. Module::Name => 1.1
 	'Test::More'	=> 0,
 	'Test::Deep'	=> 0,

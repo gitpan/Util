@@ -304,8 +304,9 @@ typedef enum {
 	
 #ifdef PERL_MAGIC_backref
 	/* 
-	   flick the WEAKREF switch if it's a weak reference: newSVsv
-	   doesn't clone this and ensure the referent's refcount is not increased by this reference
+	   flick the WEAKREF switch if it's a weak reference (newSVsv
+	   doesn't clone this) and ensure the referent's refcount
+	   is not increased by this reference
 	 */
 	if (SvWEAKREF(original)) {
 	    SvREFCNT_dec(SvRV(clone));
