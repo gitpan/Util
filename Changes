@@ -1,5 +1,12 @@
 Revision history for Perl extension Util.
 
+0.06  Tue Jul 29 11:28:02 2003
+
+    fixed typechecking in csv() 
+    added csv() tests to text.t
+    now explicitly requires perl >= 5.8
+	rather than simply advising it in the README
+
 0.05  Tue Jul 22 15:44:05 2003
 
     added squash(): similar to trim: flattens

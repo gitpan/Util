@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 15;
+use Test::More tests => 17;
 
 BEGIN {
     chdir 't' if (-d 't');;
@@ -49,3 +49,22 @@ is ($commify, <<EOS, 'commify');
     999999999 999,999,999
 EOS
 
+my $fields = [ qw(foo bar baz) ];
+my $avalues = [ [ qw(alpha beta gamma) ], [ qw(fee fie foe) ], [ qw(one two three) ] ];
+my $hvalues = [
+    { foo => 'alpha', bar => 'beta', baz => 'gamma' },
+    { foo => 'fee', bar => 'fie', baz => 'foe' },
+    { foo => 'one', bar => 'two', baz => 'three' }
+];
+
+my $csv_want = <<CSV;
+"foo","bar","baz"
+"alpha","beta","gamma"
+"fee","fie","foe"
+"one","two","three"
+CSV
+
+chomp $csv_want;
+
+is (csv($fields, $avalues), $csv_want, 'csv ARRAY ref values');
+is (csv($fields, $hvalues), $csv_want, 'csv HASH ref values');

@@ -6,8 +6,6 @@ use Test::More tests => 31;
 
 # use Data::Dumper; $Data::Dumper::Terse = $Data::Dumper::Indent = 1;
 
-# qw(any id respond clone arrayref coderef scalarref hashref swap)
-
 # TODO: id test: make less lame: stop using $$
 # TODO: check that void invocation prints its argument
 # TODO: much more extensive any() tests

@@ -1,6 +1,6 @@
 package Util;
 
-use 5.006;
+use 5.008;
 use strict;
 use warnings;
 use Errno;
@@ -25,7 +25,7 @@ our %EXPORT_TAGS = (
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 bootstrap Util $VERSION;
 
@@ -513,9 +513,9 @@ sub csv ($$) {
     my $ref_arg2 = ref $arrayref || '';
 
     die ("csv: invalid arg 1: expected ref to an ARRAY of field names: got $ref_arg1")
-	unless (arrayref $ref_arg1);
+	unless (arrayref $fields);
     die ("csv: invalid arg 2: expected ref to an ARRAY of ARRAY or HASH refs: " .
-	 "got $ref_arg2") unless (arrayref $ref_arg2);
+	 "got $ref_arg2") unless (arrayref $arrayref);
 
     local $_;
 
@@ -530,7 +530,7 @@ sub csv ($$) {
 	    push (@row, $ref->{$_}) for (@$fields);
 	} else {
 	    my $reftype = ref $ref || '';
-	    die ("csv: invalid arg 2: expected arg 2 element ARRAY of ARRAY or HASH refs, got: '$reftype'");
+	    die ("csv: invalid arg 2: expected arg 2 element to be an ARRAY or HASH ref, got: '$reftype'");
 	}
 
 	push @out, join (',', map { _dquote $_ } @row);
