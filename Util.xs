@@ -28,10 +28,11 @@ static SV *clone_value (SV *, UV);
 static void clone_hash (SV * ref, SV *target)
 {
     char *key;
-    SV *val;
+    SV *val, *sv_key;
     HV *original = (HV *)ref;
     HV *clone = (HV *)target;
     HE *next = NULL;
+    void *ok = NULL;
     I32 retlen = 0;
     I32 riter;
     HE *eiter;
@@ -43,14 +44,29 @@ static void clone_hash (SV * ref, SV *target)
     hv_iterinit (original);
 
     while (next = hv_iternext (original)) {
-	key = hv_iterkey (next, &retlen);
 	val = clone_value(hv_iterval (original, next), 0);
-	/* Don't recalculate the hash code */
-	if (!hv_store (clone, key, retlen, val, HeHASH(next))) {
-	    /* We haven't incremented the value's refcount so there's no
-	     * need to decrement it here */
-	    croak("Can't store value in cloned hash");
+/*
+	if (HeKLEN(next) == HEf_SVKEY) { // denotes an SV * key
+	    sv_key = clone_value(HeSVKEY(next), 0);
+	    ok = hv_store_ent(clone, sv_key, val, HeHASH(next));
+	} else {
+	    key = hv_iterkey (next, &retlen);
+	    ok = hv_store (clone, key, retlen, val, HeHASH(next));
 	}
+
+	Soonish, support for UTF8 keys and restricted HASHes will go here
+*/
+	key = hv_iterkey (next, &retlen);
+	ok = hv_store (clone, key, retlen, val, HeHASH(next));
+
+	/*
+	    1) HeHASH(next): no need to recalculate the hash code
+	    2) We haven't incremented the value's refcount so
+	       there's no need to decrement it here
+	 */
+
+	if (!ok)
+	    warn("Can't store value in cloned hash");
     }
 
     /* Restore iteration state */
@@ -99,6 +115,7 @@ static SV *
 clone_value (SV *original, UV visible)
 {
     SV *clone = &PL_sv_undef;
+    /* SV *clone = Nullsv; */
     SV **seen = NULL;
     Handler clone_handler = NULL;
 
@@ -112,10 +129,17 @@ clone_value (SV *original, UV visible)
        In addition, the magical backref AV will be seen again, even
        though its refcount is fixed at 1. In this case 'visible'
        is (i.e. has been) set to 1 inside the MAGICAL handler below.
+
+       SvWEAKREF is defined in Perl 5.6.1, but PERL_MAGIC_backref isn't
+       so test for the superset rather than the subset of functionality
+       we require.
+
+       FIXME: Need to check the 5.6.1 source to make sure it's a new
+       implementation/feature and not just a name change.
        
     */
 
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
     visible |= (SvREFCNT(original) > 1) || SvWEAKREF(original) || SvRMAGICAL(original);
 #else
     /* 
@@ -126,6 +150,7 @@ clone_value (SV *original, UV visible)
      */
     visible |= (SvREFCNT(original) > 1);
 #endif
+    /* visible = 1; */
 
 #ifdef UTIL_CLONE_DEBUG
     printf ("visible: 0x%x %d\n", original, visible);
@@ -133,7 +158,7 @@ clone_value (SV *original, UV visible)
 
     /* shortcircuit HSEEN lookup if possible */
     if (visible && (seen = CLONE_FETCH(original))) {
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
 	return SvWEAKREF(*seen) ? *seen : SvREFCNT_inc(*seen);
 #else
 	return SvREFCNT_inc(*seen);
@@ -163,8 +188,6 @@ typedef enum {
 
     switch (SvTYPE (original))
     {
-	case SVt_NULL: /* Already initialized to undef */
-	    break;
 	case SVt_PVCV: /* code ref - return the original FIXME: IO? FMT? FBM? */
 	    clone = SvREFCNT_inc(original);
 	    break;
@@ -178,7 +201,7 @@ typedef enum {
 	    break;
 	default: 
 	    /* 
-	     * RV, PVMG, FBM, PVIV, PVNV, GV, IO, FMT, PV &c. - don't
+	     * undef, RV, PVMG, FBM, PVIV, PVNV, GV, IO, FMT, PV &c. - don't
 	     * reinvent the API
 	     *
 	     * Additional processing for references is performed below
@@ -227,7 +250,7 @@ typedef enum {
 	MAGIC *mg, **mgp;
 	SV *cloned;
 
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
 	MAGIC *weakref;
 
 	/* 
@@ -247,7 +270,7 @@ typedef enum {
 	       ensure the magical backref AV is cached, as it will be seen again
 	       when we hit the self-ref
 	     */
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
 	    if (mg == weakref) { 
 		cloned = clone_value(mg->mg_obj, 1); /* force caching */
 		SvREFCNT_dec(cloned); /* backref AV is fixed at 1 */
@@ -279,7 +302,7 @@ typedef enum {
     	if (sv_isobject (original))
 	    (void)sv_bless(clone, SvSTASH(SvRV(original)));
 	
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
 	/* 
 	   flick the WEAKREF switch if it's a weak reference: newSVsv
 	   doesn't clone this and ensure the referent's refcount is not increased by this reference
@@ -370,10 +393,10 @@ clone(original, passthru = NULL)
      */
 
 void
-weakref_is_defined()
+backref_magic_is_defined()
     PROTOTYPE:
     CODE:
-#ifdef SvWEAKREF
+#ifdef PERL_MAGIC_backref
     XSRETURN(1);
 #else
     XSRETURN(0);

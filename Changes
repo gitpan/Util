@@ -1,6 +1,44 @@
 Revision history for Perl extension Util.
 
-0.01  Sun Jan 21 18:36:29 2001
-	- original version; created by h2xs 1.20 with options
-		-nUtil
+0.02  Wed May 28 19:18:20 2003
 
+    various AWOL snippets of code and doumentation hunted down and added:
+
+	added missing any() code and documentation
+
+	    2002-09-26: any() with no args now flips a coin
+	    2002-09-23: added pick and shuffle enhancements to any()
+
+	added missing infinity() / inf() wrapper / documentation
+	added missing jscript() code
+	added missing redirect() code / doc
+	added missing commify() code /doc
+
+	new: dquote, squote, apply, arrayref, coderef, hashref,
+	      scalarref, find, csv, min, max and swap 
+
+    removed Tie::IxHash dependency from test script
+
+    added documentation for reader() and removed GENERATOR interface to it
+    from readfile()
+
+    added atime() and ctime() to mtime() to round out the stat() trilogy
+
+    renamed uid -> id() to keep it out of setuid()'s hair 
+
+    assorted POD cleanups
+
+    hid documentation for private subs/classes
+
+    fixed glaring bug in any(): was using fixed upper bound value 
+    for the array instead of redefining it after each splice
+
+    added swap()
+
+    added README and license info
+
+    Thanks to Joshua Keroes and Jeroen Latour for a variety of fixes,
+    suggestions, feedback &c.
+
+0.01  Sun Jan 21 18:36:29 2001
+    - original version; created by h2xs 1.20 with options -nUtil

@@ -6,9 +6,14 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=>	'Util',
     'VERSION_FROM'	=>	'Util.pm', 	# finds $VERSION
-    'PREREQ_PM'		=>	{}, 		# e.g. Module::Name => 1.1
+    'PREREQ_PM'		=>	{ # e.g. Module::Name => 1.1
+	'Test::More'	=> 0,
+	'Test::Deep'	=> 0,
+	'Math::Complex'	=> 0	# for Inf / infinity
+    }, 		
     'LIBS'		=>	[''], 		# e.g. '-lm'
-    # 'DEFINE'		=>	'-DUTIL_CLONE_DEBUG -DUTIL_DEBUG',# e.g. '-DHAVE_SOMETHING'
+    # 'DEFINE'		=>	'-DUTIL_DEBUG',
+    # 'DEFINE'		=>	'-DUTIL_CLONE_DEBUG -DUTIL_DEBUG',
     # 'OPTIMIZE'	=>	'-g',
     # 'OPTIMIZE'	=>	'-pg',
     'OPTIMIZE'	=>	'-O3',

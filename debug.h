@@ -7,7 +7,7 @@ static void debug (SV *);
  * version of Devel::Peek::Dump() available to all internal routines
  * courtesy of dump.c.
  *
- * To include this header, define DEBUG. e.g 'DEFINE' => '-DDEBUG' in
+ * To include this header, define UTIL_DEBUG. e.g 'DEFINE' => '-DUTIL_DEBUG' in
  * Makefile.PL.
  *
  * A somewhat more sane way to debug XS than plain ol' assert().
@@ -28,42 +28,56 @@ static void debug (SV *);
  * sub debug($) {
  *	my $sv = shift;
  *	$sv = \$sv unless (ref $sv);
- *	print STDERR Dump ($sv), $/;
+ *	Dump ($sv);
  *	print STDERR Dumper ($sv), $/;
  * }
  * 
- * Called debug (rather than dump) so that it can be aliased to dump in
+ * Used to be called debug (rather than dump) so that it can be aliased to dump in
  * the debugger. For instance, in gdb:
  *
  *	define dump
  *	    p debug((SV *)$arg0)
  *	end
  *
- * cb: 2001-02-06
+ * But as of gdb 5.3 dump appears to be a gdb builtin. So it's now
+ * called dumper:
+ *
+ *	define debug
+ *	    p dumper((SV *)$arg0)
+ *	end
+ *
+ * or:
+ *
+ *	define pdump
+ *	    p dumper((SV *)$arg0)
+ *	end
+ *
+ * 2001-02-06 - 2003-03-09
  */ 
 
 static void
-debug (SV *ref)
+dumper (SV *sv)
 {
 
-    if (!ref)
+    if (!sv)
 	return;
+    printf ("inside debug.h: %x\n", sv);
     
-    if (SvROK(ref)) {
+    if (SvROK(sv)) {
     	dSP ;
 
     	PUSHMARK(SP) ;
-    	XPUSHs(ref);
+    	XPUSHs(sv);
     	PUTBACK ;
 	/* FIXME: need to check for &main::debug */
     	perl_call_pv("main::debug", G_DISCARD);
     } else {
 	/* dump lite */
-	do_sv_dump(0, Perl_debug_log, ref, 0, 4, 0, 0);
+	do_sv_dump(0, Perl_debug_log, sv, 0, 4, 0, 0);
     }
 
     /*
-     * Don't callback to perl unless it's a reference: most apps can't handle it.
+     * Don't callback to perl unless it's a reference: most pure perl subs can't handle it.
      * It's tempting to implement mortality here (using sv2mortal)
      * but we have to be careful to roundtrip the clone for diagnostic purposes.
      */

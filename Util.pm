@@ -1,14 +1,12 @@
 package Util;
 
-# Changelog
-# chocolateboy: 2002-04-29: Added PIPE option to writeFile
-
 use 5.006;
 use strict;
 use warnings;
 use Errno;
 use Carp qw(carp confess croak);
 use POSIX qw(floor);
+use Fcntl ':flock'; # LOCK_SH, LOCK_EX, LOCK_UN
 
 require Exporter;
 require DynaLoader;
@@ -17,18 +15,23 @@ use AutoLoader 'AUTOLOAD';
 our @ISA = qw(Exporter DynaLoader);
 
 our %EXPORT_TAGS = (
-    'io'	=> [ qw(readfile writefile appendfile reader mtime) ],
-    'www'	=> [ qw(html jscript jshtml xmlparse urlize) ],
-    'string'	=> [ qw(plural trim ltrim rtrim quote capitalize) ], 
-    'misc'	=> [ qw(any uid respond clone) ],
-    'math'	=> [ qw(div isnum isuv isbig isfloat isneg isinf isnan) ],
-    'test'	=> [ qw(weakref_is_defined) ]);
+'io'	=> [ qw(appendfile atime readfile writefile reader mtime ctime) ],
+'www'	=> [ qw(html jscript jshtml xmlparse urlize redirect) ],
+'string'=> [ qw(dquote squote csv plural trim ltrim rtrim quote capitalize commify) ], 
+'misc'	=> [ qw(any id respond clone arrayref coderef scalarref hashref swap) ],
+'math'	=> [ qw(div isnum isuv isbig isfloat isint isneg isinf isnan inf infinity min max) ],
+'test'	=> [ qw(backref_magic_is_defined) ]
+);
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 bootstrap Util $VERSION;
+
+# TODO:
+
+# implement quote() as an XSUB?
 
 1;
 
@@ -36,75 +39,741 @@ __END__
 
 =head1 NAME
 
-    Util - Frequently Hacked Functions
+Util - Frequently Hacked Functions
 
 =head1 DESCRIPTION
 
-    A cookbook of tasty functions for the terminally lazy, impatient and hubristic
+A cookbook of tasty functions for the terminally lazy,
+impatient and hubristic
 
-=head1 AUTHOR
+=head1 TAGS
 
-    chocolateboy: chocolate.boy@email.com
+Rather than listing a group of functions by name,
+related subs can be imported using the tag syntax:
 
-=head1 SEE ALSO
+use Util qw(:tag);
 
-    Scalar::Util, Clone
+The following tags have been defined:
 
-=head1 BUGS
+:io
 
-    clone() currently segfaults if it encounters a Regex object
+    appendfile, atime, ctime, mtime, reader, readfile, writefile
+
+:www
+
+    html, jscript, jshtml, redirect, urlize, xmlparse
+
+:string
+    
+    capitalize, commify, csv, dquote, ltrim, plural, quote, rtrim, squote, trim
+
+:misc
+
+    any, apply, arrayref, coderef, find, hashref, scalarref, clone, id, respond, swap
+
+:math
+
+    div, inf, infinity, isbig, isfloat, isinf, isnan, isneg, isnum, isuv, max, min
 
 =head1 PUBLIC METHODS
 
-=head1 any
+=head2 any
 
-usage:
+=head3 usage:
 
-    any ($arrayref)
+    # return 0 or 1
+    my $flip = any();
 
-	# or
+    # return a random element of the ARRAY or a random HASH key
+    my $el = any($hash_or_array_ref);
 
-    any ($hashref)
+    # return a randomly selected list of ARRAY elements / HASH keys
+    my @els = any($hash_or_array_ref, $number_of_items_to_pick);
 
-description:
+    # as above, but return the elements as an ARRAY ref (if
+    # $number_of_items_to_pick is greater than 1)
+    my $els = any($hash_or_array_ref, $number_of_items_to_pick);
 
-    returns a randomly chosen member of the referenced array, or a random key
-    from the referenced hashtable
+    # allow the same element to be picked multiple times
+    my @els = any($hash_or_array_ref, $number_of_items_to_pick,
+	$with_replacement);
+    my $els = any($hash_or_array_ref, $number_of_items_to_pick,
+	$with_replacement);
+
+    # return a random number between 0 and $integer_max inclusive
+    my $int = any($integer_max);
+
+    # return a random number between $integer_min and $integer_max
+    # inclusive
+    my $int = any($integer_min, $integer_max);
+
+=head3 description:
+
+Returns a randomly chosen member of the referenced ARRAY, or a
+random key from the referenced HASH.
+
+If the second argument is supplied, that number of items is chosen
+and returned as a list - defaults to 1.
+
+If the third argument is supplied, items can be repeatedly chosen -
+defaults to 0 (false).
+
+If the first argument is an integer x, an integer between 0 and x
+(inclusive) is returned.
+
+If no argument is supplied, 0 or 1 is returned randomly.
+
+If the first and second arguments are integers x and y, then an
+integer between x and y (inclusive) is returned.
+
+    any($ref, ...) does not modify the original HASH/ARRAY.
+
+    any($ref, $reflength) returns a shuffled list e.g.
+
+    # perform a non-destructive shuffle of the elements of $array
+    my @shuffled = any($array, $#$array + 1)
+
+When supplied with a HASH or ARRAY ref, and a second argument
+(specifying the number of items to pick) greater than 1, the
+selected values are returned as a list in list context and an
+ARRAY ref in scalar context.
 
 =cut
 
-sub any($; $) {
-    my $ref = shift;
-    my $top = shift;
+sub any(;$$$) {
+    my $ref = shift || 1;
+
+    unless (ref $ref) {
+        my $end = shift;
+        if ($end && ($end > $ref)) {
+            # pick a random number between $start and $end inclusive
+            my $span = ($end - $ref) + 1;
+            return int(rand($span)) + $ref;
+        } else { # ignore end if it's not greater than start
+            return int(rand($ref + 1));
+        }
+    }
+
+    my $pick = shift || 1;
+    my $repl = shift || 0;
     $ref = [ keys (%$ref) ] if (ref $ref eq 'HASH');
+
     croak ("any: invalid reference '$ref': expected ARRAY or HASH")
-	unless (ref $ref eq 'ARRAY');
-    $top = $#$ref + 1 unless (defined $top);
-    return $ref->[floor(rand($top))];
+        unless (ref $ref eq 'ARRAY');
+
+    my $last = $#$ref + 1;
+
+    # make sure we're not trying to pick more items than the list
+    # contains
+    $pick = $#$ref + 1 if ($pick > $last);
+
+    # don't bother modifying the list if we're only picking one item
+    if ($pick == 1) {
+        return $ref->[int(rand($last))];
+    } else {
+        my @any = ();
+        if ($repl) {
+            push @any, $ref->[int(rand($last))] for (1 .. $pick);
+        } else {
+            my @ref = @$ref; # don't modify the original list
+	    for (1 .. $pick) {
+		# squashed bug: recalculate $top every time the
+		# array is spliced 
+		my $top = $#ref + 1;
+		push @any, splice (@ref, int(rand($top)), 1);
+	    }
+        }
+        return wantarray ? @any : [ @any ];
+    }
 }
 
-=head1 isnum
+=head2 appendfile
 
-usage:
+=head3 usage:
+
+    appendfile($file, $data, %args);
+
+=head3 description:
+
+This is a simple wrapper for writefile()'s APPEND option.
+
+Appends $data to the file whose path is specified by $file.
+
+See writefile() for %args options.
+
+=cut
+
+# die and warn handlers for appendfile: saves allocating a
+# closure every time
+
+sub _appendfile_die  { die ('reader: ' . shift) }
+sub _appendfile_warn { warn ('reader: ' . shift) }
+
+sub appendfile ($$;%) {
+    my ($file, $data, %args) = @_;
+    $args{DIE} ||= \&_appendfile_die;
+    $args{WARN} ||= \&_appendfile_warn;
+    $args{APPEND} = 1;
+    writefile($file, $data, %args);
+}
+
+=head2 apply
+
+=head3 usage:
+
+    my $result = apply $coderef, @optional_args;
+
+	# or 
+
+    my $result = apply sub { do_something() }, @optional_args;
+
+	# or 
+
+    my $result = apply \&Name::Space::sub, @optional_args;
+
+=head3 description:
+
+Invokes the subroutine supplied as the first argument,
+passing any arguments in @optional_args as parameters.
+
+Returns the result of the subroutine call.
+
+=cut
+
+sub apply ($;@) {
+    my $sub = shift;
+    confess "apply: sub '$sub' is not a CODE ref" unless (coderef $sub);
+    &$sub;
+}
+
+=head2 arrayref
+
+=head3 usage:
+
+    do_something() if (arrayref $arg);
+
+=head3 description:
+
+Returns a true value if $arg is a blessed or unblessed
+ARRAY reference.
+
+Returns a false value otherwise.
+
+=cut
+
+sub arrayref ($) {
+    my $ref = shift;
+    my $refname = ref $ref;
+    return ($refname && (($refname eq 'ARRAY') || UNIVERSAL::isa ($ref, 'ARRAY')));
+}
+
+=head2 atime
+
+=head3 usage:
+
+    my $atime = atime($file);
+
+=head3 description:
+
+Returns the time (in seconds since the epoch) the specified
+file was last accessed.
+
+=cut
+
+sub atime($) {
+    return (stat($_[0]))[8];
+}
+
+=head2 capitalize
+
+=head3 usage:
+
+    capitalize($str)
+
+    # or 
+
+    capitalize($str, @do_not_capitalize_these_words)
+
+=head3 description:
+
+Initial-capitalizes $str i.e. any words (defined as consecutive
+characters between word-boundaries (\b)) in $str that aren't already
+all caps are lowercased and their initials are uppercased.
+
+Note: apostrophes are treated as word characters, so:
+
+    "There's more than one way to do it"
+
+becomes:
+
+    "There's More Than One Way To Do It"
+	
+rather than:
+    
+    "There'S More Than One Way To Do It"
+
+Any arguments supplied after string are treated as exceptions and
+left as is.
+
+For non-trivial capitalization see the { case => 'highlight' } option
+of Damian Conway's Text::Autoformat.
+
+In the absence of an explicit exception list, Util's capitalize()
+(and Text::Autoformat's { case => 'title' }) mechanically renders
+the text: 
+
+    
+    'what i did on my summer vacation in monterey'
+
+as:
+
+    'What I Did On My Summer Vacation In Monterey'
+
+Whereas Text::Autoformat's { case => 'highlight' } option offers the
+much more titular:
+
+    'What I Did on my Summer Vacation in Monterey'
+
+=cut
+
+# FIXME: should preserve mixed-case words: iPod, nVidia, CeBIT
+# To-be-tested fix: preserve case if word contains capitals
+
+sub capitalize ($;@) {
+    my $text = shift;
+
+    if (@_) {
+	local $_;
+	my %exclude = map { $_ => 1 } @_;
+	$text =~ s/([\w']+)/(($1 ne lc ($1)) || $exclude{$1}) ?
+	    $1 : "\u\L$1"/ge;
+    } else {
+	$text =~ s/([\w']+)/$1 ne lc $1 ? $1 : "\u\L$1"/ge;
+    }
+
+    return $text;
+}
+
+=head2 clone
+
+=head3 usage:
+
+    use Util qw(clone);
+
+    $a = Foo->new();
+    $b = { alpha => 'beta', gamma => 'vlissides' };
+
+    tie %c, 'Foo::Bar';
+
+    $d = clone($a);
+    $e = clone($b);
+    $f = clone(\%c);
+
+    # or
+
+    my $node2 = {
+	name	    => 'node2',
+	children    => [ $node3, $node4 ],
+	parent	    => weaken ($node1)	    # weaken() to avoid memory leak
+    };
+
+    # clone $node2 but preserve the original $node1 (rather than cloning
+    # through it all the way to the root)
+
+    my $clone = clone($node2, [ $node1 ]);
+
+	# or, equivalently
+
+    my $clone = clone($node2, [ $node2->{parent} ]);
+
+=head3 description:
+
+clone() returns a recursive copy of its argument, which can be an
+arbitrary (scalar) type including nested HASH, ARRAY and reference types
+(including weak references), tied variables and objects.
+
+To duplicate non-scalar types (e.g. lists, ARRAYs and HASHes), pass them
+to clone() by reference. e.g.
+    
+    my $copy = clone (\@array);
+
+    # or
+
+    my %copy = %{ clone (\%hash) };
+
+clone() takes an optional second argument: a reference to an ARRAY
+containing a list of exceptions i.e. values that should be 'passed-thru'
+verbatim. This is useful for, amongst other things, cloning nodes in a
+hierarchy without duplicating the structure all the way to the root.
+
+For a slower, but more flexible solution see Storable's dclone().
+
+=cut
+
+=head2 coderef
+
+=head3 usage:
+
+    do_something() if (coderef $arg);
+
+=head3 description:
+
+Returns a true value if $arg is a blessed or unblessed
+CODE reference.
+
+Returns a false value otherwise.
+
+=cut
+
+sub coderef ($) {
+    my $ref = shift;
+    my $refname = ref $ref;
+    return ($refname && (($refname eq 'CODE') || UNIVERSAL::isa ($ref, 'CODE')));
+}
+
+=head2 commify
+
+=head3 usage:
+
+    my $pretty = commify($int);
+
+=head3 description:
+
+Returns a reader-friendly representation of the supplied integer
+punctuated with commas at the customary thousands/millions
+(&c.) points.
+
+Thus:
+
+    printf "%-9u\t%11s%s", $_, commify($_), $/
+        for (map { $_ x $_ } 1 .. 9);
+
+prints:
+
+    1                     1
+    22                   22
+    333                 333
+    4444              4,444
+    55555            55,555
+    666666          666,666
+    7777777       7,777,777
+    88888888     88,888,888
+    999999999   999,999,999
+
+=cut
+
+sub commify($) {
+    my $r = reverse shift();
+    $r =~ s/(\d{3})(?=\d)/$1,/g;
+    # scalar() to prevent print() propagating list context to reverse()
+    scalar reverse $r;
+}
+
+=head2 csv
+
+=head3 usage:
+
+    my $csv = csv($fields, $arrayref);
+
+	# or
+
+    my $csv = csv [ 'alpha', 'beta', 'gamma', 'vlissides' ],
+	[
+	    { alpha => 'fee',   beta => 'fie',    gamma => 'foe',   vlissides => 'fum'    }, 
+	    { alpha => 'foo',	beta => 'bar',	  gamma => 'baz',   vlissides => 'foobar'  }, 
+	    { alpha => 'one',   beta => 'two',    gamma => 'three', vlissides => 'four' }
+	];
+
+	# or
+
+     my $csv = csv [ 'alpha', 'beta', 'gamma', 'vlissides' ],
+	[
+	    [ qw(fee fie foe fum) ],
+	    [ qw(foo bar baz foobar) ],
+	    [ qw(one two three four) ],
+	];
+
+    # yields
+
+    "alpha","beta","gamma","delta"
+    "fee","fie","foe","fum"
+    "foo","bar","baz","foobar"
+    "one","two","three","four"
+
+=head3 description:
+
+    $fields:	an ARRAY ref representing a list of field names
+    $arrayref:	a reference to an ARRAY of HASH or ARRAY references
+
+Returns either a string or (in list context) a list
+representing the rows of a CSV (Comma Separated Values) document
+generated from the supplied HASH or ARRAY refs and using the fields
+listed in $fields as the field names.
+
+Field names and values are double quoted.
+
+=cut
+
+sub csv ($$) {
+    my ($fields, $arrayref) = @_;
+
+    my $ref_arg1 = ref $fields || '';
+    my $ref_arg2 = ref $arrayref || '';
+
+    die ("csv: invalid arg 1: expected ref to an ARRAY of field names: got $ref_arg1")
+	unless ($ref_arg1 eq 'ARRAY');
+    die ("csv: invalid arg 2: expected ref to an ARRAY of ARRAY or HASH refs: " .
+	 "got $ref_arg2") unless ($ref_arg2 eq 'ARRAY');
+
+    local $_;
+
+    my @out = join (',', map { dquote $_ } @$fields);
+
+    for my $ref (@$arrayref) {
+	my @row = ();
+	my $reftype = ref $ref || '';
+
+	if ($reftype eq 'ARRAY') {
+	    push (@row, $ref->[$_]) for (0 .. $#$fields);
+	} elsif ($reftype eq 'HASH') {
+	    push (@row, $ref->{$_}) for (@$fields);
+	} else {
+	    die ('csv: invalid arg 2: expected arg 2 element ARRAY of ARRAY or HASH refs, got: "$ref"');
+	}
+
+	push @out, join (',', map { dquote $_ } @row);
+    }
+
+    return wantarray ? @out : join ($/, @out);
+}
+
+=head2 ctime
+
+=head3 usage:
+
+    my $ctime = ctime($file);
+
+=head3 description:
+
+Returns the time (in seconds since the epoch) the specified
+file was created.
+
+=cut
+
+sub ctime($) {
+    return (stat($_[0]))[10];
+}
+
+=head2 div
+
+=head3 usage:
+
+    my ($quotient, $remainder) = div ($numerator, $denominator);
+
+    # e.g.
+    
+    my ($q, $r) = div (13, 3);
+
+    # $q = 4, $r = 1:
+    # 13 ($numerator) = 4 ($quotient) x 3 ($denominator) + 1 ($remainder) 
+
+=head3 description:
+
+Integer division operator: in list context, returns the quotient and remainder when the first
+operand ($numerator) is divided by the second ($denominator).
+
+i.e. 
+
+    $numerator = $quotient * $denominator + $remainder
+
+In scalar context, returns just the quotient. To return the
+remainder, use %.
+
+=cut
+
+sub div ($$) {
+    my ($numerator, $denominator) = @_;
+    my ($quotient, $remainder) = (int ($numerator / $denominator),
+	$numerator % $denominator);
+    return wantarray ? ($quotient, $remainder) : $quotient;
+}
+
+=head2 dquote
+
+=head3 usage:
+
+    my $double_quoted = dquote($string);
+
+=head3 description:
+
+Returns (a copy of) its argument surrounded by double quotes.
+
+Any internal double quotes encountered inside $str are escaped with a backslash.
+
+=cut
+
+sub dquote ($) {
+    my $text = shift;
+    $text =~ s/"/\\"/g;
+    return sprintf '"%s"', $text;
+}
+
+=head2 find
+
+=head3 usage:
+
+    my $index = find ($arrayref, $scalar)
+
+	# or
+
+    my $index = find ($arrayref, $scalar, $from)
+
+=head3 description:
+
+Returns the offset of $scalar within $arrayref, with the first
+position denoted by 0.
+
+$scalar can be a number, string or reference.
+
+-1 is returned if the item is not found.
+
+If the third argument is supplied, the search begins at that index
+(the offset is still calculated from the beginning of the ARRAY ref).
+
+=cut
+
+# TODO: negative $from could indicate backwards search
+# TODO: user-supplied comparator - how to keep the interface clean?
+
+sub find ($$;$) {
+    my ($haystack, $needle, $from) = @_;
+    local $_;
+
+    $from = 0 unless (defined $from);
+
+    if (isnum $needle) {
+	($haystack->[$_] == $needle) && return ($_) for ($from .. $#$haystack);
+    } else {
+	($haystack->[$_] eq $needle) && return ($_) for ($from .. $#$haystack);
+    }
+    
+    return -1;
+}
+
+=head2 hashref
+
+=head3 usage:
+
+    do_something() if (hashref $arg);
+
+=head3 description:
+
+Returns a true value if $arg is a blessed or unblessed HASH reference.
+
+Returns a false value otherwise.
+
+=cut
+
+sub hashref ($) {
+    my $ref = shift;
+    my $refname = ref $ref;
+    return ($refname && (($refname eq 'HASH') || UNIVERSAL::isa ($ref, 'HASH')));
+}
+
+=head2 html
+
+=head3 usage:
+
+    html ($text);
+
+=head3 description:
+
+Returns $text with the HTML Content-type header prefixed.
+
+Prints the prefixed page out directly if called in void context.
+
+=cut
+
+sub html ($) {
+    respond ("Content-type: text/html\n\n" . shift);
+}
+
+=head2 id
+
+=head3 usage:
+
+    id()
+
+=head3 description:
+
+Returns a quick 'n' dirty Unique Identifier. Uses $$ (amongst
+other things), so not necessarily reliable under SpeedyCGI,
+mod_perl &c.
+
+=cut
+
+sub id () {
+    srand ($$ | time); # FIXME: $$ isn't unique in SpeedyCGI mod_perl &c.
+    return unpack "H*", pack "Nnn", time, $$, int (rand(60000));
+}
+
+=head2 infinity inf
+
+=head3 usage:
+
+    my $inf = infinity()
+
+        # or
+
+    my $inf = inf()
+
+=head3 description:
+
+Perl 5.8 claims to support infinity natively, but falls short on
+many platforms. This utility function is a trivial wrapper for the
+Swiss-Army $Inf provided by Math::Complex, which jumps through every
+possible hoop to deliver a high-quality infinity product for your
+reckoning pleasure.
+
+=cut
+
+sub infinity() {
+    require Math::Complex;
+    return $Math::Complex::Inf;
+}
+
+# predeclare to build autoload stub: code down to the next sub goes into inf.al
+sub inf();
+{
+    no strict 'refs';
+    *inf = \&infinity;
+}
+
+# sub inf() { goto &infinity; } # and beyond
+
+=head2 isnum
+
+=head3 usage:
 
     isnum ($val)
 
-description:
+=head3 description:
 
-    returns nonzero value (indicating the numeric type) if $val is a number
+Returns a nonzero value (indicating the numeric type) if $val is a number.
 
-    The numeric types are a conjunction of the following flags:
+The numeric types are a conjunction of the following flags:
 
-    0x01    IS_NUMBER_IN_UV		    (number within UV range - maybe not int)
-    0x02    IS_NUMBER_GREATER_THAN_UV_MAX   (the pointed-to UV is undefined)
-    0x04    IS_NUMBER_NOT_INT		    (saw . or E notation)
-    0x08    IS_NUMBER_NEG		    (leading minus sign)
-    0x10    IS_NUMBER_INFINITY		    (this is big)
-    0x20    IS_NUMBER_NAN		    (this is not)
+    0x01  IS_NUMBER_IN_UV		(number within UV range - maybe not int)
+    0x02  IS_NUMBER_GREATER_THAN_UV_MAX (the pointed-to UV is undefined)
+    0x04  IS_NUMBER_NOT_INT		(saw . or E notation)
+    0x08  IS_NUMBER_NEG			(leading minus sign)
+    0x10  IS_NUMBER_INFINITY		(this is big)
+    0x20  IS_NUMBER_NAN			(this is not)
 
-    Rather than obliging the user to twiddle with bits, the following flavours of isnum
-    (corresponding to the flags above) are also available:
+Rather than obliging the user to twiddle with bits, the following
+flavours of isnum (corresponding to the flags above) are also available:
 
+    isint
     isuv
     isbig
     isfloat
@@ -112,11 +781,23 @@ description:
     isinf
     isnan
 
+    isint returns -1 if its operand is a negative integer, 1 if
+    it's a positive integer and 0 otherwise.
+
+    The others always return 1 or 0.
+
 =cut
 
 sub isnum ($) {
     my $val = shift;
-    return is_num($val . ''); # stringify - ironically, looks_like_number always returns 1 unless arg is a string
+    # stringify - ironically, looks_like_number always returns 1 unless
+    # arg is a string
+    return is_num($val . '');
+}
+
+sub isint ($) {
+    my $isnum = isnum(shift());
+    return ($isnum == 1) ? 1 : ($isnum == 9) ? -1 : 0;
 }
 
 sub isuv ($) {
@@ -143,47 +824,126 @@ sub isnan ($) {
     return (isnum(shift()) & 32) ? 1 : 0;
 }
 
-=head1 div
+=head2 jscript
 
-usage:
+=head3 usage:
 
-    my ($quotient, $remainder) = div ($numerator, $denominator);
+    jscript ($text);
 
-    # e.g.
-    
-    my ($q, $r) = div (13, 3);
+=head3 description:
 
-    # $q = 4, $r = 1:  13 ($numerator) = 4 ($quotient) x 3 ($denominator) + 1 ($remainder) 
+Returns the JavaScript in $text with the 'application/x-javascript'
+Content-type header prefixed.
 
-description:
-
-    integer division operator
-    
-    in list context, returns the quotient and remainder when the first operand ($numerator) is divided by the second ($denominator)
-    
-    i.e. 
-    
-	$numerator = $quotient * $denominator + $remainder
-
-    in scalar context, returns just the quotient. To return the remainder, use %
+Prints the prefixed page out directly if called in void context
 
 =cut
 
-sub div ($$) {
-    my ($numerator, $denominator) = @_;
-    my ($quotient, $remainder) = (int ($numerator / $denominator), $numerator % $denominator);
-    return wantarray ? ($quotient, $remainder) : $quotient;
+sub jscript ($) {
+    respond ("Content-type: application/x-javascript\n\n" . shift);
 }
 
-=head1 mtime
+=head2 jshtml
 
-usage:
+=head3 usage:
 
-    mtime ($file)
+    jshtml ($text);
 
-description:
+=head3 description:
 
-    returns the modification time of the specified file
+Returns the JavaScript in $text wrapped inside <script>, <head>
+and <html> tags.
+
+The resulting HTML is returned with a 'text/html' header
+
+Prints the result out directly if called in void context
+
+=cut
+
+sub jshtml ($) {
+    my $fmt = '<html><head><script><!--$/\t%s$///-->';
+    $fmt   .= '</script></head><body></body></html>';
+    respond (html(sprintf($fmt, shift())));
+}
+
+=head2 ltrim
+
+=head3 usage:
+
+    ltrim ($str)
+
+=head3 description:
+
+Returns a copy of $str with whitespace removed from the beginning.
+
+=cut
+
+sub ltrim ($) {
+    my $spacey = shift;
+    $spacey =~ s/^\s+//;
+    return $spacey;
+}
+
+=head2 max
+
+=head3 usage:
+
+    my $max = max($x, $y);
+
+=head3 description:
+
+Returns $x if $x > $y - otherwise returns $y.
+$x and y are compared using 
+
+    >  if both are numbers,
+    gt otherwise
+
+=cut
+
+sub max($$) {
+    my ($x, $y) = @_;
+    if (isnum $x and isnum $y) {
+	return $x > $y ? $x : $y;
+    } else {
+	return $x gt $y ? $x : $y;
+    }
+}
+
+=head2 min
+
+=head3 usage:
+
+    my $min = min($x, $y);
+
+=head3 description:
+
+Returns $x if $x < $y - otherwise returns $y.
+$x and y are compared using 
+
+    <  if both are numbers,
+    lt otherwise
+
+=cut
+
+sub min($$) {
+    my ($x, $y) = @_;
+    if (isnum $x and isnum $y) {
+	return $x < $y ? $x : $y;
+    } else {
+	return $x lt $y ? $x : $y;
+    }
+}
+
+=head2 mtime
+
+=head3 usage:
+
+    my $mtime = mtime($file);
+
+=head3 description:
+
+Returns the time (in seconds since the epoch) the specified file
+was last modified.
 
 =cut
 
@@ -191,45 +951,62 @@ sub mtime($) {
     return (stat($_[0]))[9];
 }
 
-=head1 respond
+=head2 plural
 
-usage:
+=head3 usage:
 
-    respond ($scalar)
-    respond (@list)
+    my $plural = plural($stem, $count);
 
-description:
+	# or
 
-    respond() performs a context-sensitive return.
-    In void context the return value is printed
-    In scalar context it is returned as a scalar
-    In list context it is returned as a list
+    my $plural = plural($stem, $count, $plural);
+
+=head3 description:
+
+Plural() takes a singular word or word-stem as an argument; it
+evaluates $count to see if it is equal to 1; if it is, $stem is
+returned unchanged; otherwise $stem is pluralised by adding
+$plural, or 's' if $plural hasn't been supplied.
+
+Thus:
+
+	my $plural = plural('error', $error);
+
+	will return:
+	
+	    'errors' if $error == 0
+	    'error'  if $error == 1
+	    'errors' if $error >  1
+
+This simple implementation does not support irregular plurals that
+modify the stem. For solutions to that, and indeed, most other
+non-trivial pluralization problems, the reader is referred to
+Damian Conway's Lingua::EN::Inflect.
 
 =cut
 
-sub respond { # Context-sensitive return
-    my @args = @_;
-    my $arg = shift;
-    my $context = (caller(1))[5];
-    return @args if ($context);
-    return $arg if (defined $context);
-    print @args;
+sub plural ($$;$) {
+    my ($string, $count, $plural) = @_;
+    $plural = 's' unless (defined $plural);
+    return ($count == 1) ? $string : $string . $plural;
 }
 
-=head1 quote
+=head2 quote
 
-usage:
+=head3 usage:
 
     quote($str)
 
-description:
+=head3 description:
 
-    escapes all single quote ('), double-quote (") and vertical space
-    (\n\r\f) characters with a backslash, visually flattening the resulting text
+Escapes all single quote ('), double-quote (") and vertical space
+(\n\r\f) characters with a backslash, visually flattening the
+resulting text.
 
-    useful for string export e.g. assigning a HTML page to a JavaScript var
+Useful for string export e.g. assigning a HTML page to a
+JavaScript var.
 
-    prints the escaped text out directly if called in void context
+Prints the escaped text out directly if called in void context.
 
 =cut
 
@@ -242,243 +1019,485 @@ sub quote ($) { # Escape quotes and newlines
     respond ($escapee);
 }
 
-=head1 capitalize
+=head2 reader
 
-usage:
+=head3 usage:
 
-    capitalize($str)
+    my $source = '';
+    my $read = reader($path, IRS => '...', CHOMP => 1);
 
-    # or 
+    while ($read->(\$source)) {
+	do_something_with($source);
+    }
 
-    capitalize($str, @do_not_capitalize_these_words)
+	# or
 
-description:
+    while ($read->()) { # implied target: $_
+	do_something_with($_);
+    }
 
-    Initial-capitalizes $str i.e. any words (defined as consecutive characters between word-boundaries (\b))
-    in $str that aren't already all caps are lowercased and their initials are uppercased.
-    Note: apostrophes are treated as word characters, so "There's more than one way to do it" becomes
-    "There's More Than One Way To Do It" rather than "There'S More Than One Way To Do It"
+=head3 description:
+	
+This method implements a generator/continuation interface to the
+fine art of file slurpage. It provides a private (lexically scoped)
+filehandle and an associated file reader (in the form of a closure).
 
-    Any arguments supplied after string are treated as exceptions and left as is
+This closure should be called with a reference to the variable
+one wishes to be assigned the next line from the file.
 
-=cut
+If no argument is supplied then $_ is assumed to be the target.
 
-sub capitalize ($;@) {
-   my $text = shift;
-   if (@_) {
-       local $_;
-       my %exclude = map { $_ => 1 } @_;
-       $text =~ s/([\w']+)/(($1 eq uc $1) || $exclude{$1}) ? $1 : "\u\L$1"/ge;
-   } else {
-       $text =~ s/([\w']+)/$1 eq uc $1 ? $1 : "\u\L$1"/ge;
-   }
-   return $text;
-}
+The generator yields true while the file is slurping, and undef
+thereafter.
 
-=head1 trim
-
-usage:
-
-    trim ($str)
-
-description:
-
-    removes whitespace from the beginning and end of $str and squashes
-    multiple spaces down to single spaces
+The file is automatically closed either when the file has been read,
+or the closure goes out of scope - whichever comes first.
 
 =cut
 
-sub trim ($) {  # Aaaaaaaaaaaaaagh!!!
-    my $spacey = shift;
-    $spacey=~s/^\s+//;
-    $spacey=~s/\s+$//;
-    $spacey =~tr/ / /s;
-    return $spacey;
+#    For more information on the relative performance of
+#    FileHandle v local (*FH) (local is used in 'vanilla' readfile())
+#    vide:
+#
+#	http://groups.google.com/groups?
+#	hl=en&frame=right&th=f6035f6588fa7bfe&seekm=tbaf8dq702.fsf%40blue.sea.net#s
+#
+#    Unfortunately, local() won't work in reader() (as a way of creating
+#    anonymous, temporary filehandles) because close() is called automatically
+#    on such filehandles at the end of the scope. The end of the scope
+#    means the end of the call to reader() or the end of a (single)
+#    call to $generator->() - neither of which correspond to the end of days
+#    for the filehandle as far as the user is concerned.
+#
+#    What's needed is a solution similar to Alexander Alexandrescu's
+#    ScopeGuard, and that's what's implemented here:
+#
+#	http://www.cuj.com/experts/1812/alexandr.htm?topic=experts
+#
+
+# die and warn handlers for reader: saves allocating a closure every time
+sub _reader_die  { die ('reader: ' . shift) }
+sub _reader_warn { warn ('reader: ' . shift) }
+
+sub reader ($;%) {
+    my ($file, %args) = @_;
+
+    my ($die, $warn, $chomp) = @args{qw(DIE WARN CHOMP)};
+
+    $die ||= \&_reader_die;
+    $warn ||= \&_reader_warn;
+
+    $die->("filename not defined") unless (defined $file);
+
+    # Copy $/ before local() obliterates it below
+    my $delim = $/;
+
+    # Now $/ has been saved, we can override it if necessary
+    # support aliases for the delimiter
+    # tread carefully in case the delimiter is '' or 0
+    for my $irs (qw(IRS DELIM SPLIT DELIMITER)) {
+	next unless (exists $args{$irs});
+	$delim = $args{$irs};
+	last;
+    }
+
+    # $sg satisfies 3 requirements
+    #	1. it's a lexical *reference* - needs to be a ref to give us a number
+    #	2. it's referred to within the body of generator - a variable isn't
+    #	   bound into a closure unless it's referred to
+    #	3. it's private - the user is shielded from the implementation
+
+    my $sg = Scope::Guard->new();
+    my $handle = '_UTIL_READER_FH_' . int($sg);
+	    
+    {
+	no strict 'refs';
+	$die->("can't open <$file>: $!") unless (open($handle, $file));
+	$handle = *$handle; # change $handle from a string into a filehandle
+    }
+
+    # wait until $handle is a filehandle before we guard it
+    $sg->guard($handle, \&myclose);
+
+    unless (flock($handle, LOCK_SH)) {
+	close $handle;
+	$die->("Can't lock <$file>: $!");
+    }
+
+    # arg is optional but if supplied must be (or must be coercable into)
+    # a scalar ref ... not that prototypes are honoured on subrefs... 
+    my $generator = sub(;\$) {
+	return unless ($sg);
+	# ambient locals aren't (apparently) bound into closures
+	local $/ = $delim;
+	my $yield = $_[0] ? shift : \$_;
+
+	if (defined ($$yield = readline($handle))) {
+	    chomp ($$yield) if ($chomp);
+	    return 1;
+	} else {
+	    flock ($handle, LOCK_UN); # release shared lock
+	    # manually (indirectly) invoke the Scope::Guard dtor
+	    return ($sg = undef);
+	}
+    };
+
+    return $generator;
 }
 
-=head1 ltrim
+=head2 readfile
 
-usage:
+=head3 description:
 
-    ltrim ($str)
+    Swiss-Army Slurp
 
-description:
+=head3 usage:
 
-    removes whitespace from beginning of $str
+    # vanilla
+    readfile($path); # print the file
+	# or
+    my $file = readfile($path);
+	
+    # handle warnings/fatal errors
+    my $file = readfile($path, WARN => \&my_warn, DIE => sub { die @_ });
+	
+    # lines
+    my @file = readfile($path);
+	
+    # set Input Record Separator
+    my @file = readfile($path, IRS => '...');
+	
+    # strip Input Record Separator from result
+    my @file = readfile($path, IRS => '...', CHOMP => 1);
+	
+    # all together now...
+    my $file = readfile(
+	$path,
+	WARN  => $warn,
+	DIE   => $die,
+	IRS   => '...',
+	CHOMP => 1);
+
+    # synonyms for IRS => DELIM, SPLIT, DELIMITER
+
+=cut
+	
+# die and warn handlers for readfile: saves allocating a closure every time
+sub _readfile_die  { die ('readfile: ' . shift) }
+sub _readfile_warn { warn ('readfile: ' . shift) }
+
+sub readfile($;%) { # this prototype doesn't do what it says on the tin
+    my ($file, %args) = @_;
+    local $_;
+    my ($die, $warn, $chomp) = @args{qw(DIE WARN CHOMP)};
+    # tread carefully in case the delimiter is '' or 0
+    my $delim;
+
+    for my $irs (qw(IRS DELIM SPLIT DELIMITER)) {
+	next unless (exists $args{$irs});
+	$delim = $args{$irs};
+	last;
+    }
+
+    $die ||= \&_readfile_die;
+    $warn ||= \&_readfile_warn;
+
+    $die->("filename not defined") unless (defined $file);
+
+    my @lines = ();
+
+    local (*FILE);
+    if (open(FILE, $file)) {
+	local $/;
+
+	if (flock(FILE, LOCK_SH)) { # LOCK_SH
+	    $/ = $delim if (defined $delim);
+	    while (<FILE>) {
+		chomp if ($chomp);
+		push @lines, $_; 
+	    }
+	    flock(FILE, LOCK_UN); # release shared lock
+	} else {
+	    close FILE;
+	    $die->("Can't lock <$file>: $!") 
+	}
+    } else {
+	$die->("Can't open <$file>: $!");
+    }
+
+    $warn->("Can't close <$file>: $!") unless (close FILE);
+
+    respond @lines;
+}
+
+=head2 redirect
+
+=head3 usage:
+
+    my $redirect = redirect($uri);
+
+	# or
+
+    redirect($uri);
+
+=head3 description:
+
+Returns a suitable HTTP header (and fallback HTML) to perform a browser
+redirection to the supplied URI.
+
+Prints the response directly if called in void context.
 
 =cut
 
-sub ltrim ($) {
-    my $spacey = shift;
-    $spacey=~s/^\s+//;
-    return $spacey;
+sub redirect ($) {
+    my $uri = shift;
+    my $out = "Status: 302 Redirected\n";
+    $out .= "Content-type: text/html\n";
+    $out .= "Location: $uri\n\n";
+    $out .= "<html><head>\n";
+    $out .= "<title>Client Redirected</title>\n";
+    $out .= "</head><body>\n";
+    $out .= "The CGI script has redirected your browser to " .
+	    "<a href=\"$uri\">this location</a>.\n";
+    $out .= "</body></html>\n";
+    respond $out;
 }
 
-=head1 rtrim
+=head2 respond
 
-usage:
+=head3 usage:
+
+    respond ($scalar)
+    respond (@list)
+
+=head3 description:
+
+respond() performs a context-sensitive return:
+
+    In void context the supplied arguments are printed.
+
+    In scalar context it returns:
+    
+	the supplied argument if there's only one
+	the concatenation of its arguments if there's more than one
+
+    In list context it returns the arguments unchanged.
+
+=cut
+
+sub respond (@) { # Context-sensitive return: one or more args
+    my $context = wantarray();
+
+    if ($context) {			    # list context:	pass through
+	return @_;
+    } elsif (defined $context) {	    # scalar context:	join
+	# $#_ is true if args >= 2
+	return $#_ ? join '', @_ : $_[0];
+    } else {				    # void context:	print
+	print @_;
+    }
+}
+
+=head2 rtrim
+
+=head3 usage:
 
     rtrim ($str)
 
-description:
+=head3 description:
 
-    removes whitespace from end of $str
+Returns a copy of $str with whitespace removed from the end.
 
 =cut
 
 sub rtrim ($) {
     my $spacey = shift;
-    $spacey=~s/\s+$//;
+    $spacey =~ s/\s+$//;
     return $spacey;
 }
 
-=head1 uid
+=head2 squote
 
-usage:
+=head3 usage:
 
-    uid()
+    my $single_quoted = squote($string);
 
-description:
+=head3 description:
 
-    returns a quick 'n' dirty Unique Identifier. Uses $$, so
-    not necessarily reliable under SpeedyCGI, mod_perl &c.
+Returns (a copy of) its argument surrounded by single quotes.
+
+Any internal single quotes encountered inside $str are escaped with a backslash.
 
 =cut
 
-sub uid () {
-    srand ($$ | time); # FIXME: $$ isn't unique in SpeedyCGI mod_perl &c.
-    return unpack "H*", pack "Nnn", time, $$, int (rand(60000));
+sub squote ($) {
+    my $text = shift;
+    $text =~ s/'/\\'/g;
+    return sprintf "'%s'", $text;
 }
 
-=head1 html
+=head2 scalarref
 
-usage:
+=head3 usage:
 
-    html ($text);
+    do_something() if (scalarref $arg);
 
-description:
+=head3 description:
 
-    returns text with HTML Content-type header prefixed
+Returns a true value if $arg is a blessed or unblessed SCALAR reference.
 
-    prints the prefixed page out directly if called in void context
+Returns a false value otherwise.
 
 =cut
 
-sub html ($) {
-    respond ("Content-type: text/html\n\n" . shift);
+sub scalarref ($) {
+    my $ref = shift;
+    my $refname = ref $ref;
+    return ($refname && (($refname eq 'SCALAR') || UNIVERSAL::isa ($ref, 'SCALAR')));
 }
 
-=head1 jscript
+=head2 swap
 
-usage:
+=head3 usage:
 
-    jscript ($text);
+    swap($x, $y);
 
-description:
+=head3 description:
 
-    returns the JavaScript in $text with the 'application/x-javascript' Content-type header prefixed
+Sets the value of $x to $y and vice-versa.
 
-    prints the prefixed page out directly if called in void context
+swap() is prototyped to receive its arguments by reference, and modifies
+its arguments in place like chop, chomp &c.
 
-=cut
-
-=head1 jshtml
-
-usage:
-
-    jshtml ($text);
-
-description:
-
-    returns the JavaScript in $text wrapped inside <script>, <head> and <html> tags.
-    The resulting HTML is returned with a 'text/html' header.
-
-    prints the result out directly if called in void context
+No value is returned
 
 =cut
 
-sub jshtml ($) {
-    respond (html(sprintf("<html><head><script><!--$/\t%s$///--></script></head><body></body></html>", shift())));
+sub swap (\$\$) {
+    my ($lhs, $rhs) = @_;
+    ($$lhs, $$rhs) = ($$rhs, $$lhs);
 }
 
-"Content-type: text/html\n\n<html><head><script>alert('hello, world!');</script></head></html>";
+=head2 trim
 
-=head1 plural
+=head3 usage:
 
-usage:
+    trim ($str)
 
-    my $plural = plural($stem, $count);
+=head3 description:
 
-	# or
-
-    my $plural = plural($stem, $count, $plural);
-
-description:
-
-    plural() takes a singular word or word-stem as an argument;
-    it evaluates $count to see if it is equal to 1;
-    if it is, $stem is returned unchanged; otherwise $stem is
-    pluralised by adding $plural, or 's' if $plural
-    hasn't been supplied.
-
-    thus:
-
-	my $plural = plural('error', $error);
-
-	will return:
-	
-	    'errors' if $error == 0
-	    'error' if $error == 1
-	    'errors' if $error > 1
-
-    This simple implementation does not support irregular plurals that modify the stem.
+Returns a copy of $str with whitespace removed from the beginning and end,
+and multiple internal spaces squashed into single spaces.
 
 =cut
 
-sub plural ($$;$) {
-    my ($string, $count, $plural) = @_;
-    $plural = 's' unless (defined $plural);
-    return ($count == 1) ? $string : $string . $plural;
+sub trim ($) {  # Aaaaaaaaaaaaaagh!!!
+    my $spacey = shift;
+    $spacey =~ s/^\s+//;
+    $spacey =~ s/\s+$//;
+    $spacey =~ tr/ / /s;
+    return $spacey;
 }
 
-=head1 urlize
+=head2 urlize
 
-usage:
+=head3 usage:
 
-	my $url = urlize('Foo: BAR baz'); # returns 'foo_bar_baz'
+    my $url = urlize('Foo: BAR baz'); # returns 'foo_bar_baz'
 
-	# or
+    # or
 
-	my $url = urlize('Foo - BAR - baz', 'html'); # returns 'foo_bar_baz.html'
+    my $url = urlize('Foo - BAR - baz', 'html'); # returns 'foo_bar_baz.html'
 
-description:
+=head3 description:
 
-	makes its text argument URL-friendly
+Makes its text argument URL-friendly
 
-	Returns the first argument lowercased with any consecutive non-alphanumeric characters replaced by an underscore.
-	If the optional second argument is provided, this is appended as an extension prefixed by '.'
+Returns the first argument lowercased with any consecutive non-alphanumeric
+characters replaced by an underscore.
+
+If the optional second argument is provided, this is appended as an
+extension prefixed by '.'
+
 =cut
 
 sub urlize($;$) {
     my $name = shift;
     croak ("urlize: name not defined") unless (defined $name);
     my $ext = scalar (@_) ? ".$_[0]" : '';
-    $name =~ s/[^A-Za-z0-9]+/_/g; # replace consecutive non-alphanumeric characters with an underscore
+    # replace consecutive non-alphanumeric characters with an underscore
+    $name =~ s/[^A-Za-z0-9]+/_/g;
     return lc($name) . $ext;
 }
 
-=head1 xmlparse
+=head2 writefile
 
-usage:
+=head3 usage:
 
-	xmlparse ($parser, $xml_path_or_data);
+    writefile($file, $data, %args);
 
-description:
+=head3 description:
 
-	convenience wrapper for XML::Parser (or XML::Parser::Expat - or indeed any parser that supports parse() and parsefile())
-	that is agnostic with regard to whether $xml is a file/filehandle or raw XML text.
+Write $data to filename $file. In theory, additional herbs and spices are
+specified as a list of pairs, in the same manner as readfile (and reader).
 
-	The $parser should be prefabricated according to taste.
+In practice, only APPEND => 1 for append (as opposed to truncate)
+and/or 'MODE' => $mode (to roll your own file access mode) are
+currently defined.
+
+=cut
+
+# die and warn handlers for reader: saves allocating a closure every time
+sub _writefile_die  { die('writefile: ' . shift) }
+sub _writefile_warn { warn('writefile: ' . shift) }
+
+sub writefile ($$;%) {
+    my ($file, $data, %args) = @_;
+    my ($die, $warn) = @args{qw(DIE WARN)};
+
+    $die ||= \&_writefile_die;
+    $warn ||= \&_writefile_warn;
+
+    my $mode = (exists $args{MODE}) ? $args{MODE} : ($args{APPEND} ? '>>' : '>');
+    my $status = 0; # true or false depending on print() to FILEHANDLE
+
+    local (*FILE);
+
+    if (open(FILE, "$mode$file")) {
+	if (flock(FILE, LOCK_EX)) {
+	    $status = print FILE $data;
+	    flock(FILE, LOCK_UN); # release exclusive lock
+	} else {
+	    close FILE;
+	    $die->("Can't lock <$file>: $!");
+	}
+    } else {
+	$die->("Can't open <$file>: $!");
+    }
+
+    # This is strictly unneccessary, as local (*FOO) takes care of
+    # closing the file automatically at end-of-scope 
+    # But we'll use that as a lifesaver rather than a way of life
+    $warn->("Can't close <$file>: $!") unless (close FILE);
+    return $status;
+}
+
+=cut
+
+=head2 xmlparse
+
+=head3 usage:
+
+    xmlparse ($parser, $xml_path_or_data);
+
+=head3 description:
+
+Convenience wrapper for XML::Parser (or XML::Parser::Expat - or
+indeed any parser that supports parse() and parsefile())
+that is agnostic with regard to whether $xml is a file/filehandle
+or raw XML text.
+
+The $parser should be prefabricated according to taste.
 
 =cut
 
@@ -512,326 +1531,28 @@ sub xmlparse ($$) {
     croak ("can't find file: $xml: $!") unless ($parsed);
 }
 
-=head1 readfile
+=head1 BUGS
 
-description:
+clone() currently segfaults if it encounters a Regex object
 
-    Swiss-Army Slurp
+=head1 SEE ALSO
 
-usage:
+Scalar::Util, List::Util, Clone, Storable, File::Butler
 
-    # vanilla
-    my $file = readfile($path);
-	
-    # logging
-    my $file = readfile($path, LOG => $log);
-	
-    # lines
-    my @file = readfile($path);
-	
-    # set Input Record Separator
-    my @file = readfile($path, IRS => '...');
-	
-    # strip Input Record Separator from result
-    my @file = readfile($path, IRS => '...', CHOMP => 1);
-	
-    # all together now...
-    my @file = readfile($path, LOG => $log, IRS => '...', CHOMP => 1);
-	
-    # generator/continuation
-    my $source = '';
-    my $generator = readfile($path, IRS => '...', CHOMP => 1, GENERATOR => 1);
+=head1 AUTHOR
 
-    while ($generator->(\$source)) {
-	process($source);
-    }
+chocolateboy: <chocolate.boy@email.com>
 
-	# or
+=head1 COPYRIGHT
 
-    while ($generator->()) { # implied target: $_
-	process($_);
-    }
-	
-    # synonyms for IRS => DELIM, SPLIT, DELIMITER
-	
-=cut
+Copyright (c) 2001-2003, chocolateboy.
 
-# die and warn handlers for reader: saves allocating a closure every time
-sub _die  { die('readfile: ' . shift) }
-sub _warn { die('readfile: ' . shift) }
-
-sub readfile($;%) { # this prototype doesn't do what it says on the tin
-    my ($file, %args) = @_;
-    goto &reader if $args{GENERATOR};
-    local $_;
-    my ($die, $warn, $chomp) = @args{qw(DIE WARN CHOMP)};
-    # tread carefully in case the delimiter is '' or 0
-    my $delim;
-
-    for my $irs (qw(IRS DELIM SPLIT DELIMITER)) {
-	next unless (exists $args{$irs});
-	$delim = $args{$irs};
-	last;
-    }
-
-    $die ||= \&_die;
-    $warn ||= \&_warn;
-
-    $die->("filename not defined") unless (defined $file);
-
-    my @lines = ();
-
-    local (*FILE);
-    if (open(FILE, $file)) {
-	local $/;
-
-	if (flock(FILE, 1)) { # LOCK_SH
-	    $/ = $delim if (defined $delim);
-	    while (<FILE>) {
-		chomp if ($chomp);
-		push @lines, $_; 
-	    }
-	    # FIXME: release shared lock?
-	} else {
-	    close FILE;
-	    $die->("Can't lock <$file>: $!") 
-	}
-    } else {
-	$die->("Can't open <$file>: $!");
-    }
-
-    $warn->("Can't close <$file>: $!") unless (close FILE);
-
-    return wantarray ? @lines : join('', @lines);
-}
-
-=head1 reader
-
-    This method implements a generator/continuation interface
-    to the fine art of file slurpage. Essentially, it provides a private
-    lexically scoped filehandle and an associated file reader
-    (in the form of a closure).
-
-    reader() is also accessible via readfile().
-
-    If readfile() is called with a GENERATOR => 1 argument pair,
-    then a closure is returned.
-    This closure should be called with a reference to the variable
-    one wishes to be assigned the next line from the file.
-    If no argument is supplied then $_ is assumed
-    to be the target.
-
-    The generator yields true while the file is slurping, and undef thereafter.
-
-    For more information on the relative performance of fileHandle v local (*FH)
-    (local is used in 'vanilla' readfile()) vide:
-
-	http://groups.google.com/groups?
-	    hl=en&frame=right&th=f6035f6588fa7bfe&seekm=tbaf8dq702.fsf%40blue.sea.net#s
-
-    Unfortunately, local() won't work in reader()
-    (as a way of creating anonymous, temporary filehandles)
-    because close() is called automatically on such filehandles
-    at the end of the scope. The end of the scope
-    means the end of the call to reader() or the end of a (single)
-    call to $generator->() - neither of which
-    correspond to the end of days for the filehandle as far as the user is concerned.
-
-    What's needed is a solution similar to Alexander Alexandrescu's
-    ScopeGuard, and that's what is implemented here:
-
-	http://www.cuj.com/experts/1812/alexandr.htm?topic=experts
+This module is free software. It may be used, redistributed
+and/or modified under the same terms as Perl itself.
 
 =cut
 
-sub reader ($;%) {
-    my ($file, %args) = @_;
-
-    # print "read_files: ", $/, Dumper({ @_ }), $/ if (scalar @_);
-    my ($die, $warn, $chomp) = @args{qw(DIE WARN CHOMP)};
-
-    $die ||= \&_die;
-    $warn ||= \&_warn;
-
-    $die->("filename not defined") unless (defined $file);
-
-    # Copy $/ before local() obliterates it below
-    my $delim = $/;
-
-    # Now $/ is safe, we can override it if necessary
-    # support aliases for the delimiter
-    # tread carefully in case the delimiter is '' or 0
-    for my $irs (qw(IRS DELIM SPLIT DELIMITER)) {
-	next unless (exists $args{$irs});
-	$delim = $args{$irs};
-	last;
-    }
-
-    # $sg satisfies 3 requirements
-    #	1. it's a lexical *reference* - needs to be a ref to give us a number
-    #	2. it's referred to within the body of generator - a variable isn't
-    #	   bound into a closure unless it's referred to
-    #	3. it's private - the user is shielded from the implementation
-
-    my $sg = Scope::Guard->new();
-    my $handle = 'FH_' . int($sg);
-	    
-    {
-	no strict 'refs';
-	$die->("can't open <$file>: $!") unless (open($handle, $file));
-	$handle = *$handle; # change $handle from a string into a filehandle
-    }
-
-    # wait until $handle is a filehandle before we guard it
-    $sg->guard($handle, \&myclose);
-
-    unless (flock($handle, 1)) { # LOCK_SH
-	close $handle;
-	$die->("Can't lock <$file>: $!");
-    }
-
-    # arg is optional but if supplied must be (or must be coercable into) a scalar ref
-    my $generator = sub(;\$) {
-	return unless ($sg);
-	local $/ = $delim; # ambient locals aren't (apparently) bound into closures
-	my $yield = $_[0] ? shift : \$_;
-
-	if (defined ($$yield = readline($handle))) {
-	    chomp ($$yield) if ($chomp);
-	    return 1;
-	} else {
-	    # FIXME: release shared lock?
-	    return ($sg = undef);
-	}
-    };
-
-    return $generator;
-}
-
-=head1 writefile
-
-usage:
-
-    writefile($file, $data, %args);
-
-description:
-
-    Write $data to filename $file. In theory, additional herbs
-    and spices are specified as a list of pairs,
-    in the same manner as readfile (and reader).
-    In practice, only APPEND => 1 for append (as opposed to truncate)
-    and/or 'MODE' => $mode (to roll your own file access mode) are currently defined.
-
-=cut
-
-sub writefile ($$;%) {
-    my ($file, $data, %args) = @_;
-    my $log = $args{LOG};
-    my ($die, $warn) =
-	$log ?
-	(sub { $log->fatal(shift) }, sub { $log->warning(shift) }) :
-	(sub { die('writefile: ' . shift) }, sub { warn('writefile: ' . shift) });
-
-    my $mode = (exists $args{MODE}) ? $args{MODE} : ($args{APPEND} ? '>>' : '>');
-    local (*FILE);
-    # print STDERR "opening $mode$file\n";
-    if (open(FILE, "$mode$file")) {
-	if (flock(FILE, 2)) { # LOCK_EX
-	    print FILE $data;
-	} else {
-	    close FILE;
-	    $die->("Can't lock <$file>: $!");
-	}
-    } else {
-	$die->("Can't open <$file>: $!");
-    }
-
-    # This is strictly unneccessary, as local (*FOO) takes care of
-    # closing the file automatically at end-of-scope 
-    # But we'll use that as a lifesaver rather than a way of life
-    $warn->("Can't close <$file>: $!") unless (close FILE);
-}
-
-=head1 appendfile
-
-usage:
-
-    appendfile($file, $data, %args);
-
-description:
-
-    This is a simple wrapper for writefile()'s APPEND option.
-    Appends $data to the file whose path is specified by $file.
-
-    See writefile() for %args options.
-
-=cut
-
-sub appendfile ($$;%) {
-    push @_, APPEND => 1;
-    goto &writefile;
-}
-
-=head1 clone
-
-usage:
-
-    use Util qw(clone);
-
-    $a = Foo->new();
-    $b = { foo => 'bar', move => 'zig' };
-
-    $c = clone($a);
-    $d = clone($b);
-
-    # or
-
-    my $node4 = {
-	name	    => 'node4',
-	attr	    => 'foo',
-	children    => [ $node5, $node6 ],
-	parent	    => $node3
-    };
-
-    # clone $node4 but preserve the original $node3 (rather than cloning
-    # through it all the way to the root)
-
-    my $clone = clone($node4, [ $node3 ]);
-
-	# or, equivalently
-
-    my $clone = clone($node4, [ $node4->{parent} ]);
-
-description:
-
-    clone() returns a recursive copy of its argument, which can be an
-    arbitrary (scalar) type including nested hash, array and reference types
-    (including weak references), tied variables and objects.
-
-    To duplicate non-scalar types (e.g. lists, arrays and hashes), pass them
-    in by reference. e.g.
-	
-	my $copy = clone (\@array);
-
-	# or
-
-	my %copy = %{ clone (\%hash) };
-
-    clone() takes an optional second argument: a reference to an array
-    containing a list of exceptions i.e. values that should be 'passed-thru'
-    verbatim. This is useful for, amongst other things, cloning nodes in a
-    hierarchy without duplicating the structure all the way to the root.
-
-    For a slower, but more flexible solution see Storable's dclone().
-
-=head1 PRIVATE METHODS
-
-=head1 myclose
-
-    Used as an auxiliary filehandle destructor by reader()
-
-=cut
-
+# Used as an auxiliary filehandle destructor by reader()
 # FIXME: could inherit warner to flag any close() problems
 
 sub myclose {
@@ -841,51 +1562,47 @@ sub myclose {
 
 package Scope::Guard;
 
-=head1 Scope::Guard
-
-=head1 DESCRIPTION
-
-    Confer lexical semantics on an arbitrary resource
-
-=head1 METHODS
-
-=head1 new
-
-usage:
-
-    my $sg = Scope::Guard->new();
-
-description:
-
-    Creates a new ScopeGuard object. ScopeGuard provides resource
-    management for a non-lexically-scoped variable
-    by wrapping that variable in a lexical whose destructor then
-    manages the bound resource.
-
-    Thus the lifetime of a non-lexical resource can be made
-    commensurate with that of a blessed lexical.
-
-    In other words, a resource that's messy, painful or
-    inconvenient to close/free/cleanup can be 'automagically' managed
-    as painlessly as any temporary. Forget about it, let it go out of
-    scope, or set it to undef and resource
-    management kicks in via the ScopeGuard destructor (DESTROY, of course)
-    which feeds its second member (handler) its first member (resource).
-
-    In addition to this resource management functionality,
-    the ScopeGuard pointer value (as an integer) is used to
-    create a unique filehandle *name* within Util::reader()
-    (called by Util::readfile). In practice, any lexical reference
-    could have been used to provide a safe filehandle name.
-    The ScopeGuard object just happened to be the most convenient
-    lexical at our disposal.
-
-    For more information on ScopeGuard, vide:
-
-	http://www.cuj.com/experts/1812/alexandr.htm?topic=experts
-
-
-=cut
+# DESCRIPTION
+#
+#    Confer lexical semantics on an arbitrary resource
+#
+# METHODS
+#
+#    new
+#
+# usage:
+#
+#    my $sg = Scope::Guard->new();
+#
+# description:
+#
+#    Creates a new ScopeGuard object. ScopeGuard provides resource
+#    management for a non-lexically-scoped variable
+#    by wrapping that variable in a lexical whose destructor then
+#    manages the bound resource.
+#
+#    Thus the lifetime of a non-lexical resource can be made
+#    commensurate with that of a blessed lexical.
+#
+#    In other words, a resource that's messy, painful or
+#    inconvenient to close/free/cleanup can be 'automagically' managed
+#    as painlessly as any temporary. Forget about it, let it go out of
+#    scope, or set it to undef and resource
+#    management kicks in via the ScopeGuard destructor (DESTROY, of course)
+#    which feeds its second member (handler) its first member (resource).
+#
+#    In addition to this resource management functionality,
+#    the ScopeGuard pointer value (as an integer) is used to
+#    create a unique filehandle *name* within Util::reader()
+#    (called by Util::readfile). In practice, any lexical reference
+#    could have been used to provide a safe filehandle name.
+#    The ScopeGuard object just happened to be the most convenient
+#    lexical at our disposal.
+#
+#    For more information on ScopeGuard, vide:
+#
+#	http://www.cuj.com/experts/1812/alexandr.htm?topic=experts
+#
 
 sub new {
     my ($class, $resource, $handler) = @_;
@@ -893,37 +1610,35 @@ sub new {
     bless $self, ref $class || $class;
 }
 
-=head1 guard
-
-usage:
-
-    $sg->guard($resource, $handler);
-
-description:
-
-    Initialize a ScopeGuard object with the resource it should
-    manage and the handler that should be called to implement
-    that management when the ScopeGuard object's destructor is called.
-
-=cut
+# guard
+#
+# usage:
+#
+#    $sg->guard($resource, $handler);
+#
+# description:
+#
+#    Initialize a ScopeGuard object with the resource it should
+#    manage and the handler that should be called to implement
+#    that management when the ScopeGuard object's destructor is called.
+#
 
 sub guard {
     my $self = shift;
     @$self = @_;
 }
 
-=head1 DESTROY
-
-usage:
-
-    $sg->DESTROY();
-
-description:
-
-    Not called directly. The destructor is a thin wrapper around
-    the invocation of the handler on the resource
-
-=cut
+# DESTROY
+#
+# usage:
+#
+#    $sg->DESTROY();
+#
+# description:
+#
+#    Not called directly. The destructor is a thin wrapper around
+#    the invocation of the handler on the resource
+#
 
 sub DESTROY {
     my $self = shift;

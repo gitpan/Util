@@ -1,9 +1,14 @@
 Changes
 debug.h
+debug.pl
 Makefile.PL
 MANIFEST
+README
+t/clone.t
+t/io.t
+t/math.t
+t/misc.t
+t/Node.pm
+t/string.t
 Util.pm
 Util.xs
-t/clone.t
-t/clone_weakref.t
-t/isnum.t
