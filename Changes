@@ -1,5 +1,13 @@
 Revision history for Perl extension Util.
 
+0.05  Tue Jul 22 15:44:05 2003
+
+    added squash(): similar to trim: flattens
+	multiline text to one line - useful for source filters
+    changed ':string' tag to ':text' and string.t to text.t
+    minor documentation tweaks
+    added a TODO file
+
 0.04  Fri Jul 04 12:37:36 2003
 
     added missing find() export
@@ -13,7 +21,7 @@ Revision history for Perl extension Util.
 	dquote:	    only used as a helper sub for csv()
 	jshtml:	    markup in code == evil
 	quote:	    unused
-       	redirect:   markup in code == evil
+       	redirect:   markup in code == evil - implemented by CGI.pm
 	squote:	    only used as a helper sub for csv()
        	urlize:	    unused
        	min:	    List::Util::min, List::Util::minstr
@@ -25,7 +33,7 @@ Revision history for Perl extension Util.
 
 0.02  Wed May 28 19:18:20 2003
 
-    various AWOL snippets of code and doumentation hunted down and added:
+    various AWOL snippets of code and documentation hunted down and added:
 
 	added missing any() code and documentation
 

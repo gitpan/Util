@@ -15,17 +15,17 @@ use AutoLoader 'AUTOLOAD';
 our @ISA = qw(Exporter DynaLoader);
 
 our %EXPORT_TAGS = (
-'io'	=> [ qw(appendfile atime readfile writefile reader mtime ctime) ],
-'www'	=> [ qw(html js text xml xmlparse) ],
-'string'=> [ qw(csv plural trim ltrim rtrim capitalize commify) ], 
-'misc'	=> [ qw(any id find respond clone arrayref coderef scalarref hashref swap) ],
-'math'	=> [ qw(div isnum isuv isbig isfloat isint isneg isinf isnan inf infinity) ],
+'io'	=> [ qw(appendfile atime ctime mtime reader readfile writefile) ],
+'www'	=> [ qw(html js text urlize xml xmlparse) ],
+'text'	=> [ qw(capitalize commify csv ltrim plural rtrim squash trim) ], 
+'misc'	=> [ qw(any arrayref clone coderef find hashref id respond scalarref swap) ],
+'math'	=> [ qw(div inf infinity isbig isfloat isinf isint isnan isneg isnum isuv) ],
 'test'	=> [ qw(backref_magic_is_defined) ]
 );
 
 our @EXPORT_OK = ( map { @$_ } values %EXPORT_TAGS );
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 bootstrap Util $VERSION;
 
@@ -59,7 +59,7 @@ The following tags have been defined:
 
     html, js, text, xml, xmlparse
 
-:string
+:text
     
     capitalize, commify, csv, ltrim, plural, rtrim, trim
 
@@ -152,10 +152,10 @@ sub any(;$$$) {
 
     my $pick = shift || 1;
     my $repl = shift || 0;
-    $ref = [ keys (%$ref) ] if (ref $ref eq 'HASH');
+    $ref = [ keys (%$ref) ] if (hashref $ref);
 
     croak ("any: invalid reference '$ref': expected ARRAY or HASH")
-        unless (ref $ref eq 'ARRAY');
+        unless (arrayref $ref);
 
     my $last = $#$ref + 1;
 
@@ -284,17 +284,17 @@ sub atime($) {
 
 =head3 usage
 
-    capitalize($str)
+    my $capitalized = capitalize($string);
 
     # or 
 
-    capitalize($str, @do_not_capitalize_these_words)
+    my $capitalized = capitalize($string, @do_not_capitalize_these_words);
 
 =head3 description
 
-Initial-capitalizes $str i.e. any words (defined as consecutive
-characters between word-boundaries (\b)) in $str that aren't already
-all caps are lowercased and their initials are uppercased.
+Initial-capitalizes $string i.e. any words (defined as consecutive
+characters between word-boundaries (\b)) in $string that don't already
+contain capitals are lowercased and their initials are uppercased.
 
 Note: apostrophes are treated as word characters, so:
 
@@ -308,7 +308,7 @@ rather than:
     
     "There'S More Than One Way To Do It"
 
-Any arguments supplied after string are treated as exceptions and
+Any arguments supplied after $string are treated as exceptions and
 left as is.
 
 For non-trivial capitalization see the { case => 'highlight' } option
@@ -317,7 +317,6 @@ of Damian Conway's Text::Autoformat.
 In the absence of an explicit exception list, Util's capitalize()
 (and Text::Autoformat's { case => 'title' }) mechanically renders
 the text: 
-
     
     'what i did on my summer vacation in monterey'
 
@@ -331,9 +330,6 @@ much more titular:
     'What I Did on my Summer Vacation in Monterey'
 
 =cut
-
-# FIXME: should preserve mixed-case words: iPod, nVidia, CeBIT
-# To-be-tested fix: preserve case if word contains capitals
 
 sub capitalize ($;@) {
     my $text = shift;
@@ -517,9 +513,9 @@ sub csv ($$) {
     my $ref_arg2 = ref $arrayref || '';
 
     die ("csv: invalid arg 1: expected ref to an ARRAY of field names: got $ref_arg1")
-	unless ($ref_arg1 eq 'ARRAY');
+	unless (arrayref $ref_arg1);
     die ("csv: invalid arg 2: expected ref to an ARRAY of ARRAY or HASH refs: " .
-	 "got $ref_arg2") unless ($ref_arg2 eq 'ARRAY');
+	 "got $ref_arg2") unless (arrayref $ref_arg2);
 
     local $_;
 
@@ -527,14 +523,14 @@ sub csv ($$) {
 
     for my $ref (@$arrayref) {
 	my @row = ();
-	my $reftype = ref $ref || '';
 
-	if ($reftype eq 'ARRAY') {
+	if (arrayref $ref) {
 	    push (@row, $ref->[$_]) for (0 .. $#$fields);
-	} elsif ($reftype eq 'HASH') {
+	} elsif (hashref $ref) {
 	    push (@row, $ref->{$_}) for (@$fields);
 	} else {
-	    die ('csv: invalid arg 2: expected arg 2 element ARRAY of ARRAY or HASH refs, got: "$ref"');
+	    my $reftype = ref $ref || '';
+	    die ("csv: invalid arg 2: expected arg 2 element ARRAY of ARRAY or HASH refs, got: '$reftype'");
 	}
 
 	push @out, join (',', map { _dquote $_ } @row);
@@ -604,7 +600,7 @@ sub div ($$) {
 # 
 # Returns (a copy of) its argument surrounded by double quotes.
 # 
-# Any internal double quotes encountered inside $str are escaped with a backslash.
+# Any internal double quotes encountered inside $string are escaped with a backslash.
 # 
 # =cut
 
@@ -856,11 +852,11 @@ sub js (;$) {
 
 =head3 usage
 
-    ltrim ($str)
+    my $trimmed = ltrim ($string);
 
 =head3 description
 
-Returns a copy of $str with whitespace removed from the beginning.
+Returns a copy of $string with whitespace removed from the beginning.
 
 =cut
 
@@ -1177,11 +1173,11 @@ sub respond (@) { # Context-sensitive return: one or more args
 
 =head3 usage
 
-    rtrim ($str)
+    my $trimmed = rtrim ($string);
 
 =head3 description
 
-Returns a copy of $str with whitespace removed from the end.
+Returns a copy of $string with whitespace removed from the end.
 
 =cut
 
@@ -1201,7 +1197,7 @@ sub rtrim ($) {
 # 
 # Returns (a copy of) its argument surrounded by single quotes.
 # 
-# Any internal single quotes encountered inside $str are escaped with a backslash.
+# Any internal single quotes encountered inside $string are escaped with a backslash.
 # 
 # =cut
 # 
@@ -1231,6 +1227,26 @@ sub scalarref ($) {
     my $ref = shift;
     my $refname = ref $ref;
     return ($refname && (($refname eq 'SCALAR') || UNIVERSAL::isa ($ref, 'SCALAR')));
+}
+
+=head2 squash
+
+=head3 usage
+
+    my $text = squash ($string);
+
+=head3 description
+
+Returns a 'flat' copy of $string i.e. with initial and terminal whitespace
+removed and one or more internal whitespace characters (including
+carriage-returns and newlines) squashed into a single space.
+
+=cut
+
+sub squash ($) { # Aaaaaaaaaaaaaagh!!!
+    my $spacey = trim shift;
+    $spacey =~ s/\s+/ /g; # includes \r, \n &c.
+    return $spacey;
 }
 
 =head2 swap
@@ -1283,21 +1299,52 @@ sub text (;$) {
 
 =head3 usage
 
-    trim ($str)
+    my $trimmed = trim ($string);
 
 =head3 description
 
-Returns a copy of $str with whitespace removed from the beginning and end,
-and multiple internal spaces squashed into single spaces.
+Returns a copy of $string with whitespace removed from the beginning and end;
+in addition, consecutive internal spaces are squashed to a single space.
 
 =cut
 
-sub trim ($) {  # Aaaaaaaaaaaaaagh!!!
+sub trim ($) {
     my $spacey = shift;
     $spacey =~ s/^\s+//;
     $spacey =~ s/\s+$//;
     $spacey =~ tr/ / /s;
     return $spacey;
+}
+
+=head2 urlize
+
+=head3 usage:
+
+    my $url = urlize('Foo: BAR baz'); # returns 'foo_bar_baz'
+
+    # or
+
+    my $url = urlize('Foo - BAR - baz', 'html'); # returns 'foo_bar_baz.html'
+
+=head3 description:
+    
+makes its text argument URL-friendly
+    
+Returns the first argument lowercased with any consecutive non-alphanumeric
+characters replaced by an underscore.
+
+If the optional second argument is provided, this is appended as an
+extension prefixed by '.'
+
+=cut
+
+sub urlize($;$) {
+    my $name = shift;
+    croak ("urlize: name not defined") unless (defined $name);
+    my $ext = scalar (@_) ? ".$_[0]" : '';
+    # replace consecutive non-alphanumeric characters with an underscore
+    $name =~ s/[^A-Za-z0-9]+/_/g;
+    return lc($name) . $ext;
 }
 
 =head2 writefile
@@ -1431,7 +1478,7 @@ clone() currently segfaults if it encounters a Regex object
 
 =head1 SEE ALSO
 
-Scalar::Util, List::Util, Clone, Storable, File::Butler
+Scalar::Util, List::Util, Clone, Storable, File::Butler, Toolbox
 
 =head1 AUTHOR
 
