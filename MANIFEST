@@ -1,0 +1,9 @@
+Changes
+debug.h
+Makefile.PL
+MANIFEST
+Util.pm
+Util.xs
+t/clone.t
+t/clone_weakref.t
+t/isnum.t
